@@ -689,6 +689,37 @@ test("guards spatial avatar prefetch for motion and constrained networks", () =>
   }
 });
 
+/** 空间形象页复用首页目录时，必须保留浅色层级、标题语义与三组响应式布局。 */
+test("adapts the shared directory component to the spatial reading column", async () => {
+  const [page, styles] = await Promise.all([
+    readFile(new URL("../src/pages/avatar.astro", import.meta.url), "utf8"),
+    readFile(new URL("../src/styles/avatar.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(page, /import DirectoryColumn from "\.\.\/components\/DirectoryColumn\.astro"/);
+  assert.equal((page.match(/<DirectoryColumn/g) ?? []).length, 4);
+  assert.equal((page.match(/headingLevel="h3"/g) ?? []).length, 4);
+  assert.match(page, /class="spatial-directory-groups" aria-label="职业经历目录"/);
+  assert.match(page, /class="spatial-directory-groups" aria-label="个人作品目录"/);
+  assert.match(
+    page,
+    /class="spatial-directory-groups spatial-directory-groups-multiple"\s+aria-label="文稿与流水账目录"/,
+  );
+  assert.doesNotMatch(page, /class="spatial-links"/);
+
+  const directoryRule = styles.match(
+    /\.spatial-directory-groups\s*\{([\s\S]*?)\n\}/,
+  )?.[1];
+  assert.ok(directoryRule);
+  assert.match(directoryRule, /--line:\s*var\(--spatial-line\)/);
+  assert.match(directoryRule, /--text-muted:\s*var\(--spatial-muted\)/);
+  assert.match(styles, /\.spatial-directory-groups-multiple\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/s);
+  assert.match(styles, /\.spatial-directory-groups \.column-heading h3\s*\{[^}]*font-size:/s);
+  assert.match(styles, /\.spatial-directory-groups \.directory-links\s*\{[^}]*grid-template-rows:\s*repeat\(5, minmax\(2\.25rem, auto\)\);/s);
+  assert.match(styles, /\.spatial-directory-groups \.directory-links a::after\s*\{\s*content:\s*none;/);
+  assert.doesNotMatch(styles, /\.spatial-links/);
+});
+
 /** 无 WebGL2 时必须在场景包和完整模型请求之前终止动态路径。 */
 test("detects WebGL2 support before loading the avatar model", () => {
   let contextReleased = false;
@@ -1612,7 +1643,7 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
   );
   assert.match(
     styles,
-    /\.spatial-links\s*\{[^}]*font-size:\s*var\(--information-font-size\)/,
+    /\.spatial-directory-groups\s*\{[^}]*font-size:\s*var\(--information-font-size\)/,
   );
   assert.match(
     styles,

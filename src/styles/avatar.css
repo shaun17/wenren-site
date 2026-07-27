@@ -478,29 +478,74 @@
   margin-top: 0.35rem;
 }
 
-.spatial-links {
+.spatial-copy-wide {
+  width: min(43vw, 38rem);
+}
+
+/* 空间页复用首页目录组件，只改变容器密度与浅色场景中的局部色值。 */
+.spatial-directory-groups {
+  --line: var(--spatial-line);
+  --text-muted: var(--spatial-muted);
   display: grid;
   margin-top: clamp(1.35rem, 3vw, 2.4rem);
-  border-top: 1px solid var(--spatial-line);
   font-family: var(--font-mono);
   font-size: var(--information-font-size);
   letter-spacing: 0.06em;
 }
 
-.spatial-links a {
-  display: flex;
-  min-height: 3.25rem;
-  padding: 0.76rem 0;
+.spatial-directory-groups-multiple {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(1rem, 2vw, 1.75rem);
+}
+
+.spatial-directory-groups .directory-column,
+.spatial-directory-groups .directory-column:last-child,
+.spatial-directory-groups .directory-column + .directory-column {
+  padding: 0;
+  border: 0;
+}
+
+.spatial-directory-groups .column-index {
+  display: none;
+}
+
+.spatial-directory-groups .column-heading {
+  margin-bottom: 0.65rem;
+}
+
+.spatial-directory-groups .column-heading h3 {
+  font-size: var(--information-font-size);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+}
+
+.spatial-directory-groups .directory-links {
+  border-top: 1px solid var(--spatial-line);
+  grid-template-rows: repeat(5, minmax(2.25rem, auto));
+}
+
+.spatial-directory-groups .directory-links li {
   border-bottom: 1px solid var(--spatial-line);
+}
+
+.spatial-directory-groups .directory-links a {
+  display: flex;
+  width: 100%;
+  min-height: 2.25rem;
+  padding: 0.42rem 0;
   align-items: center;
-  justify-content: space-between;
+  overflow-wrap: anywhere;
   transition:
     padding 180ms ease,
     background-color 180ms ease;
 }
 
-.spatial-links a span {
-  font-size: 1.1em;
+.spatial-directory-groups .directory-links a::after {
+  content: none;
+}
+
+.spatial-directory-groups .directory-links .more-link {
+  margin-top: 0;
 }
 
 .spatial-scroll-cue {
@@ -534,14 +579,14 @@
     transform: translateX(0.18rem);
   }
 
-  .spatial-links a:hover {
+  .spatial-directory-groups .directory-links a:hover {
     padding-inline: 0.7rem;
     background: rgba(32, 33, 30, 0.06);
   }
 }
 
 .spatial-home-link:focus-visible,
-.spatial-links a:focus-visible,
+.spatial-directory-groups a:focus-visible,
 .spatial-brand:focus-visible {
   outline-color: var(--spatial-ink);
 }
@@ -631,6 +676,10 @@
     backdrop-filter: blur(14px);
   }
 
+  .spatial-copy-wide {
+    width: 100%;
+  }
+
   .spatial-copy-intro {
     padding: 0;
     border: 0;
@@ -660,8 +709,29 @@
     max-width: 34rem;
   }
 
-  .spatial-links {
+  .spatial-directory-groups {
     margin-top: 1rem;
+    font-size: clamp(0.68rem, 2.8vw, 0.78rem);
+    letter-spacing: 0.025em;
+  }
+
+  .spatial-directory-groups-multiple {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+
+  .spatial-directory-groups .column-heading h3 {
+    font-size: inherit;
+    letter-spacing: inherit;
+  }
+
+  .spatial-directory-groups .directory-links {
+    grid-template-rows: repeat(5, minmax(2.1rem, auto));
+  }
+
+  .spatial-directory-groups .directory-links a {
+    min-height: 2.1rem;
+    padding-block: 0.34rem;
   }
 
   .spatial-scroll-cue {
@@ -681,7 +751,7 @@
   }
 
   .spatial-home-link,
-  .spatial-links a,
+  .spatial-directory-groups a,
   .spatial-portrait-canvas,
   .spatial-portrait-fallback {
     transition: none;

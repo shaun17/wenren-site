@@ -58,6 +58,43 @@ const extractDirectoryEntries = (column) =>
     /<li data-directory-entry><a href="([^"]+)">([^<]+)<\/a><\/li>/g,
   )].map((match) => ({ href: match[1], title: match[2] }));
 
+/** 把不同页面的同一分类归一为可比较快照，忽略 h2/h3 的语义层级差异。 */
+const extractDirectorySnapshot = (html, category) => {
+  const column = extractDirectoryColumn(html, category);
+  const heading = column.match(/<h[23][^>]*>([^<]+)<\/h[23]>/)?.[1] ?? "";
+  const moreHref = column.match(
+    /<a class="more-link" href="([^"]+)"[^>]*data-directory-more>更多<\/a>/,
+  )?.[1];
+  return {
+    entries: extractDirectoryEntries(column),
+    heading,
+    moreHref,
+  };
+};
+
+/** 按下一个顶层章节标记切出空间页章节，避免内层目录 section 提前结束匹配。 */
+const extractSpatialChapter = (html, chapter) => {
+  const marker = `data-spatial-chapter="${chapter}"`;
+  const markerIndex = html.indexOf(marker);
+  if (markerIndex === -1) return "";
+  const chapterStart = html.lastIndexOf("<section", markerIndex);
+  const nextMarkerIndex = html.indexOf(
+    `data-spatial-chapter="${Number(chapter) + 1}"`,
+    markerIndex + marker.length,
+  );
+  const chapterEnd =
+    nextMarkerIndex === -1
+      ? html.length
+      : html.lastIndexOf("<section", nextMarkerIndex);
+  return html.slice(chapterStart, chapterEnd);
+};
+
+/** 提取空间页某章节中的目录分类顺序，锁定内容与章节的归属关系。 */
+const extractSpatialChapterCategories = (html, chapter) =>
+  [...extractSpatialChapter(html, chapter).matchAll(
+    /data-directory-category="([^"]+)"/g,
+  )].map((match) => match[1]);
+
 /** 把公开配置文字转换为 HTML 文本节点中的安全表示。 */
 const escapeHtmlText = (value) =>
   value
@@ -275,7 +312,10 @@ test("builds the isolated spatial portrait page without changing the homepage", 
   ]);
   assert.deepEqual(publicAvatarAssets.sort(), expectedAvatarAssets);
   assert.deepEqual(builtAvatarAssets.sort(), expectedAvatarAssets);
-  const html = await readRoute("avatar/index.html");
+  const [html, homepage] = await Promise.all([
+    readRoute("avatar/index.html"),
+    readRoute(),
+  ]);
 
   assert.equal(extractDocumentTitle(html), `3D 形象 — ${siteConfig.brand.name}`);
   assert.ok(html.includes(`<link rel="canonical" href="${siteConfig.origin}/avatar/">`));
@@ -342,7 +382,7 @@ test("builds the isolated spatial portrait page without changing the homepage", 
   assert.deepEqual(
     [
       ...html.matchAll(
-        /<section class="spatial-chapter spatial-chapter-directory" data-spatial-chapter="(\d+)" data-spatial-snap-anchor>/g,
+        /<section class="spatial-chapter spatial-chapter-directory" data-spatial-chapter="(\d+)" data-spatial-snap-anchor[^>]*>/g,
       ),
     ].map((match) => match[1]),
     ["1", "2", "3"],
@@ -362,6 +402,36 @@ test("builds the isolated spatial portrait page without changing the homepage", 
       html.indexOf('data-spatial-chapter="1"'),
     "默认首屏 About 后必须直接进入 Résumé",
   );
+  assert.equal((html.match(/data-directory-category=/g) ?? []).length, 4);
+  assert.equal((html.match(/class="spatial-directory-groups(?: |")/g) ?? []).length, 3);
+  assert.deepEqual(
+    [...html.matchAll(/data-directory-category="([^"]+)"/g)].map(
+      (match) => match[1],
+    ),
+    ["career", "works", "writing", "journal"],
+    "空间形象页的目录顺序必须与首页一致",
+  );
+  assert.deepEqual(extractSpatialChapterCategories(html, 1), ["career"]);
+  assert.deepEqual(extractSpatialChapterCategories(html, 2), ["works"]);
+  assert.deepEqual(extractSpatialChapterCategories(html, 3), [
+    "writing",
+    "journal",
+  ]);
+  assert.match(html, /aria-labelledby="spatial-resume-title"/);
+  assert.match(html, /aria-labelledby="spatial-independent-title"/);
+  assert.match(html, /aria-labelledby="spatial-notes-title"/);
+  assert.doesNotMatch(html, /class="spatial-links"/);
+  for (const category of siteConfig.categories) {
+    const column = extractDirectoryColumn(html, category.key);
+    const heading = column.match(/<h3[^>]*>[\s\S]*?<\/h3>/)?.[0] ?? "";
+    assert.ok(column, `空间形象页应渲染 ${category.key} 目录`);
+    assert.doesNotMatch(heading, /<a\b/);
+    assert.deepEqual(
+      extractDirectorySnapshot(html, category.key),
+      extractDirectorySnapshot(homepage, category.key),
+      `空间形象页的 ${category.key} 目录必须与首页底部一致`,
+    );
+  }
   assert.ok(findAnchor(html, "/"));
   for (const href of ["/career/", "/works/", "/writing/", "/journal/"]) {
     assert.ok(findAnchor(html, href), `空间肖像页应保留站内入口：${href}`);
