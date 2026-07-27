@@ -1,9 +1,15 @@
-import { spatialAvatarAssets } from "../config/spatial-avatar-assets";
 import { SPATIAL_AVATAR_READING_PHASE_RATIO } from "../config/spatial-avatar-layout";
+import { prepareSpatialAvatarModelLoad } from "./spatial-avatar-model";
 
 type SceneCleanup = () => void;
 
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
+const MODEL_LOADING_CLASSES = [
+  "is-cache-probing",
+  "is-loading-poster-visible",
+  "is-model-cache-warm",
+  "is-model-bytes-ready",
+] as const;
 
 /** 用轻量原生能力检测排除无 WebGL2 设备，并立即释放探测上下文。 */
 export const supportsSpatialAvatarWebGL = (
@@ -48,6 +54,7 @@ export const initSpatialPortrait = (root: HTMLElement): SceneCleanup => {
   let isDisposed = false;
   let staticPosterLoad: Promise<boolean> | null = null;
   let phaseUpdateId = 0;
+  let pendingSceneLoadController: AbortController | null = null;
 
   /** 同步首屏与阅读态，静态降级在边界处直接换图而不制造额外动画。 */
   const updatePortraitPhase = (): void => {
@@ -123,37 +130,28 @@ export const initSpatialPortrait = (root: HTMLElement): SceneCleanup => {
       root.classList.toggle("is-static-poster-ready", loaded);
       return loaded;
     });
-
-  /** WebGL 可用后再让模型与 Three.js 场景包并行下载，避免无能力设备获取完整 GLB。 */
-  const preloadSpatialAvatarModel = (): void => {
-    if (document.head.querySelector("[data-spatial-avatar-preload]")) return;
-    const preload = document.createElement("link");
-    preload.rel = "preload";
-    preload.as = "fetch";
-    preload.href = spatialAvatarAssets.model;
-    preload.crossOrigin = "anonymous";
-    preload.fetchPriority = "low";
-    preload.dataset.spatialAvatarPreload = "";
-    document.head.append(preload);
-  };
-
   /** 释放已经运行的三维场景，并回到服务端默认的同模型海报。 */
   const activateStaticPoster = (
     rootClass: "is-static" | "is-webgl-unavailable",
     message: string,
   ): void => {
     const version = ++loadVersion;
+    pendingSceneLoadController?.abort();
+    pendingSceneLoadController = null;
     sceneCleanup?.();
     sceneCleanup = null;
     root.classList.remove(
       "is-webgl-ready",
       "is-static",
       "is-webgl-unavailable",
+      ...MODEL_LOADING_CLASSES,
     );
+    root.classList.add("is-loading-poster-visible");
     page.classList.add("is-spatial-static");
     if (status) status.textContent = message;
     void ensureStaticPoster().then((loaded) => {
       if (!loaded || isDisposed || version !== loadVersion) return;
+      root.classList.remove(...MODEL_LOADING_CLASSES);
       root.classList.add(rootClass);
     });
   };
@@ -161,13 +159,17 @@ export const initSpatialPortrait = (root: HTMLElement): SceneCleanup => {
   /** 按当前动态偏好异步建立真实 GLB 场景，并忽略已经过期的加载结果。 */
   const startScene = async (): Promise<void> => {
     const version = ++loadVersion;
+    pendingSceneLoadController?.abort();
+    pendingSceneLoadController = null;
     sceneCleanup?.();
     sceneCleanup = null;
     root.classList.remove(
       "is-static",
       "is-webgl-unavailable",
       "is-webgl-ready",
+      ...MODEL_LOADING_CLASSES,
     );
+    root.classList.add("is-cache-probing");
     page.classList.add("is-spatial-static");
     if (status) status.textContent = "正在加载三维人物模型。";
 
@@ -178,16 +180,79 @@ export const initSpatialPortrait = (root: HTMLElement): SceneCleanup => {
       );
       return;
     }
-    preloadSpatialAvatarModel();
+
+    const sceneLoadController = new AbortController();
+    pendingSceneLoadController = sceneLoadController;
 
     try {
-      const { initSpatialAvatarScene } = await import("./spatial-avatar-scene");
-      if (isDisposed || motionPreference.matches || version !== loadVersion) return;
+      const sceneModule = import("./spatial-avatar-scene");
+      const modelLoad = await prepareSpatialAvatarModelLoad(
+        sceneLoadController.signal,
+      );
+      if (
+        isDisposed ||
+        sceneLoadController.signal.aborted ||
+        motionPreference.matches ||
+        version !== loadVersion
+      ) {
+        sceneLoadController.abort();
+        return;
+      }
 
-      sceneCleanup = initSpatialAvatarScene(root, {
+      root.classList.remove("is-cache-probing");
+      if (modelLoad.source === "http-cache") {
+        root.classList.add("is-model-cache-warm");
+        if (status) status.textContent = "三维人物模型正在解析。";
+      } else {
+        root.classList.add("is-loading-poster-visible");
+      }
+
+      const { initSpatialAvatarScene } = await sceneModule;
+      if (
+        isDisposed ||
+        sceneLoadController.signal.aborted ||
+        motionPreference.matches ||
+        version !== loadVersion
+      ) {
+        sceneLoadController.abort();
+        return;
+      }
+
+      const cleanupScene = initSpatialAvatarScene(root, {
+        modelBytes: modelLoad.bytes,
+        onDispose: (): void => {
+          sceneLoadController.abort();
+        },
+        onModelBytesReady: (): void => {
+          if (
+            isDisposed ||
+            sceneLoadController.signal.aborted ||
+            version !== loadVersion
+          ) {
+            return;
+          }
+          root.classList.remove(
+            "is-cache-probing",
+            "is-loading-poster-visible",
+            "is-model-cache-warm",
+          );
+          root.classList.add("is-model-bytes-ready");
+          if (status) status.textContent = "三维人物模型正在解析。";
+        },
         onReady: (): void => {
-          if (isDisposed || version !== loadVersion) return;
-          root.classList.remove("is-static", "is-webgl-unavailable");
+          if (
+            isDisposed ||
+            sceneLoadController.signal.aborted ||
+            version !== loadVersion
+          ) {
+            return;
+          }
+          pendingSceneLoadController = null;
+          root.classList.remove(
+            "is-static",
+            "is-webgl-unavailable",
+            ...MODEL_LOADING_CLASSES,
+          );
           root.classList.add("is-webgl-ready");
           page.classList.remove("is-spatial-static");
           if (status) status.textContent = "三维人物模型已加载。";
@@ -200,6 +265,21 @@ export const initSpatialPortrait = (root: HTMLElement): SceneCleanup => {
           activateStaticPoster("is-webgl-unavailable", message);
         },
       });
+      if (
+        isDisposed ||
+        sceneLoadController.signal.aborted ||
+        version !== loadVersion
+      ) {
+        cleanupScene();
+        return;
+      }
+      sceneCleanup = (): void => {
+        sceneLoadController.abort();
+        if (pendingSceneLoadController === sceneLoadController) {
+          pendingSceneLoadController = null;
+        }
+        cleanupScene();
+      };
     } catch {
       if (isDisposed || version !== loadVersion) return;
       activateStaticPoster(
@@ -225,6 +305,8 @@ export const initSpatialPortrait = (root: HTMLElement): SceneCleanup => {
     loadVersion += 1;
     if (phaseUpdateId) window.cancelAnimationFrame(phaseUpdateId);
     phaseUpdateId = 0;
+    pendingSceneLoadController?.abort();
+    pendingSceneLoadController = null;
     abortController.abort();
     sceneCleanup?.();
     sceneCleanup = null;

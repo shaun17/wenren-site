@@ -22,6 +22,7 @@ import {
   shouldIdlePrefetchSpatialAvatar,
   shouldPrefetchSpatialAvatar,
 } from "../src/lib/spatial-avatar-prefetch.ts";
+import { prepareSpatialAvatarModelLoad } from "../src/lib/spatial-avatar-model.ts";
 import { supportsSpatialAvatarWebGL } from "../src/lib/spatial-portrait.ts";
 
 /** 把站点根路径资源解析到 public 目录，测试与生产代码共享同一份资产契约。 */
@@ -415,7 +416,7 @@ test("guards spatial avatar prefetch for motion and constrained networks", () =>
 });
 
 /** 无 WebGL2 时必须在场景包和完整模型请求之前终止动态路径。 */
-test("detects WebGL2 support before preloading the avatar model", () => {
+test("detects WebGL2 support before loading the avatar model", () => {
   let contextReleased = false;
   assert.equal(
     supportsSpatialAvatarWebGL(() => ({
@@ -442,6 +443,91 @@ test("detects WebGL2 support before preloading the avatar model", () => {
     }),
     false,
   );
+});
+
+/** 热缓存必须直接复用同一响应，避免为了判定海报又读取一次模型。 */
+test("reuses cached avatar bytes without a network request", async () => {
+  const cachedBytes = Uint8Array.from([1, 2, 3, 4]).buffer;
+  const calls = [];
+  const request = async (url, options) => {
+    calls.push({ options, url });
+    return new Response(cachedBytes, { status: 200 });
+  };
+
+  const modelLoad = await prepareSpatialAvatarModelLoad(
+    undefined,
+    request,
+    20,
+  );
+
+  assert.equal(modelLoad.source, "http-cache");
+  assert.deepEqual(
+    [...new Uint8Array(await modelLoad.bytes)],
+    [1, 2, 3, 4],
+  );
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, spatialAvatarAssets.model);
+  assert.equal(calls[0].options.cache, "only-if-cached");
+  assert.equal(calls[0].options.mode, "same-origin");
+  assert.equal(calls[0].options.credentials, "same-origin");
+});
+
+/** 缓存 miss 必须立即启动唯一一次普通请求，并把结果交给后续解析。 */
+test("falls back to one normal avatar request after a cache miss", async () => {
+  const networkBytes = Uint8Array.from([5, 6, 7]).buffer;
+  const calls = [];
+  const request = async (url, options) => {
+    calls.push({ options, url });
+    if (options.cache === "only-if-cached") {
+      return new Response(null, { status: 504 });
+    }
+    return new Response(networkBytes, { status: 200 });
+  };
+
+  const modelLoad = await prepareSpatialAvatarModelLoad(
+    undefined,
+    request,
+    20,
+  );
+
+  assert.equal(modelLoad.source, "network");
+  assert.deepEqual([...new Uint8Array(await modelLoad.bytes)], [5, 6, 7]);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].options.cache, "only-if-cached");
+  assert.equal(calls[1].options.cache, undefined);
+  assert.equal(calls[1].options.credentials, "same-origin");
+});
+
+/** 正在进行的预取不得让缓存探测无限等待；超时后海报必须能进入冷加载态。 */
+test("bounds an in-flight avatar cache probe before normal loading", async () => {
+  const networkBytes = Uint8Array.from([8, 9]).buffer;
+  const calls = [];
+  const request = (url, options) => {
+    calls.push({ options, url });
+    if (options.cache !== "only-if-cached") {
+      return Promise.resolve(new Response(networkBytes, { status: 200 }));
+    }
+    return new Promise((_resolve, reject) => {
+      options.signal.addEventListener(
+        "abort",
+        () => reject(options.signal.reason),
+        { once: true },
+      );
+    });
+  };
+
+  const startedAt = performance.now();
+  const modelLoad = await prepareSpatialAvatarModelLoad(
+    undefined,
+    request,
+    8,
+  );
+
+  assert.equal(modelLoad.source, "network");
+  assert.ok(performance.now() - startedAt < 200);
+  assert.deepEqual([...new Uint8Array(await modelLoad.bytes)], [8, 9]);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].options.signal.aborted, true);
 });
 
 /** 背景光尺度只响应相机纵深，人物左右换位不得被误判为远离镜头。 */
@@ -501,7 +587,7 @@ test("gates the retryable static poster fallback on image readiness", async () =
   );
   assert.match(
     bootstrap,
-    /void ensureStaticPoster\(\)\.then\(\(loaded\) => \{\s*if \(!loaded \|\| isDisposed \|\| version !== loadVersion\) return;\s*root\.classList\.add\(rootClass\);/,
+    /void ensureStaticPoster\(\)\.then\(\(loaded\) => \{\s*if \(!loaded \|\| isDisposed \|\| version !== loadVersion\) return;\s*root\.classList\.remove\(\.\.\.MODEL_LOADING_CLASSES\);\s*root\.classList\.add\(rootClass\);/,
     "失败、已释放或过期的加载结果都不得激活静态降级 class",
   );
   assert.doesNotMatch(
@@ -549,13 +635,13 @@ test("gates the retryable static poster fallback on image readiness", async () =
   );
   assert.match(
     styles,
-    /\.spatial-page\.is-content-phase\s+\.spatial-portrait\.is-static-poster-ready:not\(\.is-webgl-ready\)\s+\.spatial-portrait-loading-poster\s*\{\s*opacity:\s*0;/,
-    "进入内容阶段后仍须等待静态海报就绪，才能隐藏首屏近景",
+    /\.spatial-page\.is-content-phase\s+\.spatial-portrait\.is-static-poster-ready:not\(\.is-webgl-ready\):not\(\s*\.is-cache-probing\s*\):not\(\.is-model-cache-warm\):not\(\.is-model-bytes-ready\)\s+\.spatial-portrait-loading-poster\s*\{\s*opacity:\s*0;/,
+    "内容阶段只有冷加载或真实降级时才能隐藏首屏近景",
   );
   assert.match(
     styles,
-    /\.spatial-page\.is-content-phase\s+\.spatial-portrait\.is-static-poster-ready:not\(\.is-webgl-ready\)\s+\.spatial-portrait-static-poster\s*\{\s*opacity:\s*1;/,
-    "阅读态海报只能在内容阶段、图片就绪且 WebGL 未接管时显示",
+    /\.spatial-page\.is-content-phase\s+\.spatial-portrait\.is-static-poster-ready:not\(\.is-webgl-ready\):not\(\s*\.is-cache-probing\s*\):not\(\.is-model-cache-warm\):not\(\.is-model-bytes-ready\)\s+\.spatial-portrait-static-poster\s*\{\s*opacity:\s*1;/,
+    "阅读态海报不得覆盖热缓存探测或模型解析阶段",
   );
   assert.doesNotMatch(
     styles,
@@ -718,6 +804,7 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
     component,
     /class="spatial-portrait-fallback spatial-portrait-loading-poster"/,
   );
+  assert.match(component, /class="spatial-portrait is-cache-probing"/);
   assert.match(component, /data-spatial-loading-poster/);
   assert.match(component, /srcset=\{spatialAvatarAssets\.loadingPosterMobile\}/);
   assert.match(component, /src=\{spatialAvatarAssets\.loadingPoster\}/);
@@ -733,6 +820,7 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
   assert.match(component, /data-src=\{spatialAvatarAssets\.staticPoster\}/);
   assert.match(component, /data-spatial-static-source/);
   assert.match(component, /data-spatial-static-image/);
+  assert.match(component, /<noscript>[\s\S]*spatial-portrait-noscript-poster/);
   assert.equal((component.match(/loading="eager"/g) ?? []).length, 1);
   assert.match(component, /data-spatial-static-poster[\s\S]*aria-hidden="true"/);
   assert.match(component, /alt=\{`\$\{name\} 的三维人物模型/);
@@ -819,10 +907,13 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
   assert.match(bootstrap, /page\.classList\.remove\("is-spatial-static"\)/);
   assert.match(bootstrap, /getContext\("webgl2"/);
   assert.match(bootstrap, /WEBGL_lose_context/);
-  assert.match(bootstrap, /data-spatial-avatar-preload/);
-  assert.match(bootstrap, /preload\.rel = "preload"/);
-  assert.match(bootstrap, /preload\.as = "fetch"/);
-  assert.match(bootstrap, /preload\.fetchPriority = "low"/);
+  assert.match(bootstrap, /prepareSpatialAvatarModelLoad/);
+  assert.match(bootstrap, /is-cache-probing/);
+  assert.match(bootstrap, /is-loading-poster-visible/);
+  assert.match(bootstrap, /is-model-cache-warm/);
+  assert.match(bootstrap, /is-model-bytes-ready/);
+  assert.match(bootstrap, /modelBytes: modelLoad\.bytes/);
+  assert.match(bootstrap, /onModelBytesReady/);
   assert.match(bootstrap, /loadStaticPoster\(\)\.then/);
   assert.match(bootstrap, /staticPosterSource\.srcset/);
   assert.match(bootstrap, /staticPosterImage\.src/);
@@ -854,9 +945,13 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
   );
   assert.match(
     modelLoader,
-    /fetch\(spatialAvatarAssets\.model, \{\s*credentials: "same-origin",\s*signal,?\s*\}\)/,
+    /request\(spatialAvatarAssets\.model, \{\s*credentials: "same-origin",\s*signal,?\s*\}\)/,
   );
   assert.match(modelLoader, /return response\.arrayBuffer\(\)/);
+  assert.match(modelLoader, /cache: "only-if-cached"/);
+  assert.match(modelLoader, /mode: "same-origin"/);
+  assert.match(modelLoader, /MODEL_CACHE_PROBE_TIMEOUT_MS = 48/);
+  assert.match(modelLoader, /cacheProbeController\.abort\(\)/);
 
   assert.match(scene, /new THREE\.WebGLRenderer/);
   assert.match(
@@ -874,9 +969,10 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
     scene,
     /scene\.environmentIntensity = PORTRAIT_ENVIRONMENT_INTENSITY/,
   );
+  assert.match(scene, /const modelBytes = await callbacks\.modelBytes/);
   assert.match(
     scene,
-    /loadSpatialAvatarModelBytes\(signal\)/,
+    /const modelBytes = await callbacks\.modelBytes;[\s\S]*callbacks\.onModelBytesReady\(\);[\s\S]*parseAsync\(modelBytes, "\/"\)/,
   );
   assert.match(scene, /setMeshoptDecoder\(MeshoptDecoder\)/);
   assert.match(scene, /parseAsync\(modelBytes, "\/"\)/);
@@ -1000,6 +1096,19 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
     styles,
     /\.spatial-portrait\.is-webgl-ready \.spatial-portrait-canvas/,
   );
+  assert.match(
+    styles,
+    /\.spatial-portrait\.is-cache-probing \.spatial-portrait-loading-poster/,
+  );
+  assert.match(
+    styles,
+    /\.spatial-portrait\.is-model-bytes-ready \.spatial-portrait-loading-poster/,
+  );
+  assert.match(
+    styles,
+    /\.spatial-portrait\.is-loading-poster-visible \.spatial-portrait-loading-poster/,
+  );
+  assert.match(styles, /@keyframes spatial-loading-poster-reveal/);
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
   assert.match(
     styles,

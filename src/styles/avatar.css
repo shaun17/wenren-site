@@ -185,12 +185,23 @@
 
 .spatial-portrait-fallback {
   z-index: 1;
-  transition: opacity 420ms ease;
 }
 
 /* 加载态与降级态各自保留正确构图，避免首屏近景和阅读态左栏互相牺牲。 */
 .spatial-portrait-static-poster {
   opacity: 0;
+}
+
+/* 缓存探测和模型解析期间保持纯净背景；只有确认仍需下载时才淡入加载海报。 */
+.spatial-portrait.is-cache-probing .spatial-portrait-loading-poster,
+.spatial-portrait.is-model-cache-warm .spatial-portrait-loading-poster,
+.spatial-portrait.is-model-bytes-ready .spatial-portrait-loading-poster {
+  opacity: 0;
+}
+
+.spatial-portrait.is-loading-poster-visible .spatial-portrait-loading-poster {
+  animation: spatial-loading-poster-reveal 180ms ease-out both;
+  opacity: 1;
 }
 
 .spatial-portrait.is-static .spatial-portrait-loading-poster,
@@ -201,6 +212,18 @@
 .spatial-portrait.is-static .spatial-portrait-static-poster,
 .spatial-portrait.is-webgl-unavailable .spatial-portrait-static-poster {
   opacity: 0;
+}
+
+/* 禁用脚本时仍展示完整静态肖像，不依赖运行时移除缓存探测状态。 */
+.spatial-portrait-noscript-poster {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
 }
 
 .spatial-portrait-fallback-image {
@@ -238,15 +261,29 @@
 
 /* 减少动态与 WebGL 降级也保留两阶段构图，并在阅读态无动画地换成左置海报。 */
 .spatial-page.is-content-phase
-  .spatial-portrait.is-static-poster-ready:not(.is-webgl-ready)
+  .spatial-portrait.is-static-poster-ready:not(.is-webgl-ready):not(
+    .is-cache-probing
+  ):not(.is-model-cache-warm):not(.is-model-bytes-ready)
   .spatial-portrait-loading-poster {
   opacity: 0;
 }
 
 .spatial-page.is-content-phase
-  .spatial-portrait.is-static-poster-ready:not(.is-webgl-ready)
+  .spatial-portrait.is-static-poster-ready:not(.is-webgl-ready):not(
+    .is-cache-probing
+  ):not(.is-model-cache-warm):not(.is-model-bytes-ready)
   .spatial-portrait-static-poster {
   opacity: 1;
+}
+
+@keyframes spatial-loading-poster-reveal {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 .spatial-portrait-status {

@@ -8,7 +8,7 @@ interface Props {
 const { name } = Astro.props;
 ---
 
-<figure class="spatial-portrait" data-spatial-portrait>
+<figure class="spatial-portrait is-cache-probing" data-spatial-portrait>
   <picture
     class="spatial-portrait-fallback spatial-portrait-loading-poster"
     data-spatial-loading-poster
@@ -50,6 +50,15 @@ const { name } = Astro.props;
     />
   </picture>
   <canvas class="spatial-portrait-canvas" aria-hidden="true" data-spatial-canvas></canvas>
+  <noscript>
+    <img
+      class="spatial-portrait-noscript-poster"
+      src={spatialAvatarAssets.staticPoster}
+      width="1280"
+      height="720"
+      alt=""
+    />
+  </noscript>
   <p class="spatial-portrait-status" role="status" aria-live="polite" data-spatial-status>
     当前展示三维模型静态海报。
   </p>

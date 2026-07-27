@@ -3,7 +3,6 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { SPATIAL_AVATAR_READING_PHASE_RATIO } from "../config/spatial-avatar-layout";
-import { loadSpatialAvatarModelBytes } from "./spatial-avatar-model";
 
 export interface PortraitLayoutFrame {
   modelX: number;
@@ -17,6 +16,9 @@ interface PortraitLayoutMetrics {
 }
 
 interface SpatialAvatarSceneCallbacks {
+  modelBytes: Promise<ArrayBuffer>;
+  onDispose: () => void;
+  onModelBytesReady: () => void;
   onReady: () => void;
   onStaticPosterRequested: () => void;
   onUnavailable: (message: string) => void;
@@ -707,6 +709,7 @@ export const initSpatialAvatarScene = (
   const cleanup = (): void => {
     if (isDisposed) return;
     isDisposed = true;
+    callbacks.onDispose();
     abortController.abort();
     resizeObserver.disconnect();
     intersectionObserver.disconnect();
@@ -824,11 +827,13 @@ export const initSpatialAvatarScene = (
   window.addEventListener("pagehide", handlePageHide, { signal });
   window.addEventListener("pageshow", handlePageShow, { signal });
 
-  /** 可取消地加载模型，严格验证两只独立眼球后渲染首帧。 */
+  /** 等待已提前启动的模型请求；字节到齐后先撤下海报，再解析并渲染首帧。 */
   const loadModel = async (): Promise<void> => {
     let loadedScene: THREE.Object3D | null = null;
     try {
-      const modelBytes = await loadSpatialAvatarModelBytes(signal);
+      const modelBytes = await callbacks.modelBytes;
+      if (isDisposed) return;
+      callbacks.onModelBytesReady();
       if (isDisposed) return;
       const gltf = await new GLTFLoader()
         .setMeshoptDecoder(MeshoptDecoder)

@@ -244,7 +244,10 @@ test("builds the isolated spatial portrait page without changing the homepage", 
   assert.equal(extractDocumentTitle(html), `3D 形象 — ${siteConfig.brand.name}`);
   assert.ok(html.includes(`<link rel="canonical" href="${siteConfig.origin}/avatar/">`));
   assert.match(html, /<main class="spatial-page is-spatial-static" data-spatial-page>/);
-  assert.match(html, /<figure class="spatial-portrait" data-spatial-portrait>/);
+  assert.match(
+    html,
+    /<figure class="spatial-portrait is-cache-probing" data-spatial-portrait>/,
+  );
   assert.equal(
     (html.match(/<picture class="spatial-portrait-fallback/g) ?? []).length,
     2,
