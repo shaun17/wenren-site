@@ -413,6 +413,16 @@ test("builds the isolated spatial portrait page without changing the homepage", 
   );
   assert.equal((html.match(/data-directory-category=/g) ?? []).length, 4);
   assert.equal((html.match(/class="spatial-directory-groups(?: |")/g) ?? []).length, 3);
+  const directorySurface = html.match(
+    /<div class="spatial-directory-story" data-spatial-directory-surface>([\s\S]*?)<\/div><\/div><\/main>/,
+  )?.[1];
+  assert.ok(directorySurface, "三个目录章节必须共用一个连续背景容器");
+  assert.deepEqual(
+    [...directorySurface.matchAll(/data-spatial-chapter="(\d+)"/g)].map(
+      (match) => match[1],
+    ),
+    ["1", "2", "3"],
+  );
   assert.deepEqual(
     [...html.matchAll(/data-directory-category="([^"]+)"/g)].map(
       (match) => match[1],

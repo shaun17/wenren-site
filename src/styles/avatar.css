@@ -343,8 +343,12 @@
   scroll-snap-stop: normal;
 }
 
-/* 目录蒙版在左、上、下三侧共同渐隐，连续底色不再形成任何分割线。 */
-.spatial-chapter-directory::before {
+/* 三个目录章节共用一张底色，只在整组首尾和左缘渐隐，章节交界不再露底。 */
+.spatial-directory-story {
+  position: relative;
+}
+
+.spatial-directory-story::before {
   position: absolute;
   z-index: 1;
   inset: 0;
@@ -363,11 +367,11 @@
     linear-gradient(
       180deg,
       transparent 0%,
-      rgba(0, 0, 0, 0.22) 4%,
-      rgba(0, 0, 0, 0.72) 9%,
-      #000 14% 86%,
-      rgba(0, 0, 0, 0.72) 91%,
-      rgba(0, 0, 0, 0.22) 96%,
+      rgba(0, 0, 0, 0.22) 3svh,
+      rgba(0, 0, 0, 0.72) 7svh,
+      #000 12svh calc(100% - 12svh),
+      rgba(0, 0, 0, 0.72) calc(100% - 7svh),
+      rgba(0, 0, 0, 0.22) calc(100% - 3svh),
       transparent 100%
     );
   mask-composite: intersect;
@@ -382,11 +386,11 @@
     linear-gradient(
       180deg,
       transparent 0%,
-      rgba(0, 0, 0, 0.22) 4%,
-      rgba(0, 0, 0, 0.72) 9%,
-      #000 14% 86%,
-      rgba(0, 0, 0, 0.72) 91%,
-      rgba(0, 0, 0, 0.22) 96%,
+      rgba(0, 0, 0, 0.22) 3svh,
+      rgba(0, 0, 0, 0.72) 7svh,
+      #000 12svh calc(100% - 12svh),
+      rgba(0, 0, 0, 0.72) calc(100% - 7svh),
+      rgba(0, 0, 0, 0.22) calc(100% - 3svh),
       transparent 100%
     );
 }
@@ -657,8 +661,8 @@
     align-items: flex-end;
   }
 
-  /* 窄屏目录继续使用原有局部卡片，不叠加桌面半屏蒙版。 */
-  .spatial-chapter-directory::before {
+  /* 窄屏目录继续使用原有局部卡片，不叠加桌面连续蒙版。 */
+  .spatial-directory-story::before {
     content: none;
   }
 

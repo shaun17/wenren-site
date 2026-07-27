@@ -57,73 +57,76 @@ const portraitDescription = `${siteConfig.brand.name} 的交互式空间肖像�
         </p>
       </section>
 
-      <section
-        class="spatial-chapter spatial-chapter-directory"
-        data-spatial-chapter="1"
-        data-spatial-snap-anchor
-        aria-labelledby="spatial-resume-title"
-      >
-        <div class="spatial-copy">
-          <p class="spatial-eyebrow">02 / RÉSUMÉ</p>
-          <h2 id="spatial-resume-title">Résumé</h2>
-          <p>从需求、设计、开发到发布，记录每一个真正落地的过程。</p>
-          <nav class="spatial-directory-groups" aria-label="职业经历目录">
-            <DirectoryColumn
-              category={career}
-              entries={careerEntries}
-              headingLevel="h3"
-            />
-          </nav>
-        </div>
-      </section>
+      <!-- 三个目录章节共用一张连续背景，避免章节交界处重复渐隐露底。 -->
+      <div class="spatial-directory-story" data-spatial-directory-surface>
+        <section
+          class="spatial-chapter spatial-chapter-directory"
+          data-spatial-chapter="1"
+          data-spatial-snap-anchor
+          aria-labelledby="spatial-resume-title"
+        >
+          <div class="spatial-copy">
+            <p class="spatial-eyebrow">02 / RÉSUMÉ</p>
+            <h2 id="spatial-resume-title">Résumé</h2>
+            <p>从需求、设计、开发到发布，记录每一个真正落地的过程。</p>
+            <nav class="spatial-directory-groups" aria-label="职业经历目录">
+              <DirectoryColumn
+                category={career}
+                entries={careerEntries}
+                headingLevel="h3"
+              />
+            </nav>
+          </div>
+        </section>
 
-      <section
-        class="spatial-chapter spatial-chapter-directory"
-        data-spatial-chapter="2"
-        data-spatial-snap-anchor
-        aria-labelledby="spatial-independent-title"
-      >
-        <div class="spatial-copy">
-          <p class="spatial-eyebrow">03 / INDEPENDENT</p>
-          <h2 id="spatial-independent-title">独立开发</h2>
-          <p>把真实问题变成可用的产品，也持续校准设计、技术与生活之间的尺度。</p>
-          <nav class="spatial-directory-groups" aria-label="个人作品目录">
-            <DirectoryColumn
-              category={works}
-              entries={worksEntries}
-              headingLevel="h3"
-            />
-          </nav>
-        </div>
-      </section>
+        <section
+          class="spatial-chapter spatial-chapter-directory"
+          data-spatial-chapter="2"
+          data-spatial-snap-anchor
+          aria-labelledby="spatial-independent-title"
+        >
+          <div class="spatial-copy">
+            <p class="spatial-eyebrow">03 / INDEPENDENT</p>
+            <h2 id="spatial-independent-title">独立开发</h2>
+            <p>把真实问题变成可用的产品，也持续校准设计、技术与生活之间的尺度。</p>
+            <nav class="spatial-directory-groups" aria-label="个人作品目录">
+              <DirectoryColumn
+                category={works}
+                entries={worksEntries}
+                headingLevel="h3"
+              />
+            </nav>
+          </div>
+        </section>
 
-      <section
-        class="spatial-chapter spatial-chapter-directory"
-        data-spatial-chapter="3"
-        data-spatial-snap-anchor
-        aria-labelledby="spatial-notes-title"
-      >
-        <div class="spatial-copy spatial-copy-wide">
-          <p class="spatial-eyebrow">04 / NOTES</p>
-          <h2 id="spatial-notes-title">持续记录</h2>
-          <p>持续写下实践中的判断，也保留那些不必成为结论的片段。</p>
-          <nav
-            class="spatial-directory-groups spatial-directory-groups-multiple"
-            aria-label="文稿与流水账目录"
-          >
-            <DirectoryColumn
-              category={writing}
-              entries={writingEntries}
-              headingLevel="h3"
-            />
-            <DirectoryColumn
-              category={journal}
-              entries={journalEntries}
-              headingLevel="h3"
-            />
-          </nav>
-        </div>
-      </section>
+        <section
+          class="spatial-chapter spatial-chapter-directory"
+          data-spatial-chapter="3"
+          data-spatial-snap-anchor
+          aria-labelledby="spatial-notes-title"
+        >
+          <div class="spatial-copy spatial-copy-wide">
+            <p class="spatial-eyebrow">04 / NOTES</p>
+            <h2 id="spatial-notes-title">持续记录</h2>
+            <p>持续写下实践中的判断，也保留那些不必成为结论的片段。</p>
+            <nav
+              class="spatial-directory-groups spatial-directory-groups-multiple"
+              aria-label="文稿与流水账目录"
+            >
+              <DirectoryColumn
+                category={writing}
+                entries={writingEntries}
+                headingLevel="h3"
+              />
+              <DirectoryColumn
+                category={journal}
+                entries={journalEntries}
+                headingLevel="h3"
+              />
+            </nav>
+          </div>
+        </section>
+      </div>
     </div>
   </main>
 </SiteLayout>

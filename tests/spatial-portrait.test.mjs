@@ -455,15 +455,40 @@ test("anchors directory chapters over a right-side reading surface", async () =>
     avatarPage,
     /data-spatial-chapter="0"[^>]*data-spatial-snap-anchor/,
   );
+  assert.equal(
+    (avatarPage.match(/data-spatial-directory-surface/g) ?? []).length,
+    1,
+    "三个目录章节必须共用唯一背景承载层",
+  );
+  const directorySurfaceMarkup = avatarPage.match(
+    /<div class="spatial-directory-story" data-spatial-directory-surface>([\s\S]*?)\n\s*<\/div>\n\s*<\/div>\n\s*<\/main>/,
+  )?.[1];
+  assert.ok(directorySurfaceMarkup, "共享背景承载层必须完整包住目录章节");
+  assert.deepEqual(
+    [...directorySurfaceMarkup.matchAll(/data-spatial-chapter="(\d+)"/g)].map(
+      (match) => match[1],
+    ),
+    ["1", "2", "3"],
+  );
 
   const directoryRule = styles.match(
     /\.spatial-chapter-directory\s*\{([\s\S]*?)\n\}/,
   )?.[1];
   assert.ok(directoryRule, "目录章节必须保留独立样式规则");
-  const directorySurfaceRule = styles.match(
-    /\.spatial-chapter-directory::before\s*\{([\s\S]*?)\n\}/,
+  const directoryStoryRule = styles.match(
+    /\.spatial-directory-story\s*\{([\s\S]*?)\n\}/,
   )?.[1];
-  assert.ok(directorySurfaceRule, "目录章节必须用独立蒙版承载背景色");
+  assert.ok(directoryStoryRule, "目录章节必须保留共享背景容器");
+  assert.match(directoryStoryRule, /position:\s*relative;/);
+  assert.doesNotMatch(
+    directoryStoryRule,
+    /z-index:|isolation:|transform:|filter:|opacity:|overflow:/,
+    "共享容器不能创建压住目录文字或破坏 sticky 的层叠与滚动环境",
+  );
+  const directorySurfaceRule = styles.match(
+    /\.spatial-directory-story::before\s*\{([\s\S]*?)\n\}/,
+  )?.[1];
+  assert.ok(directorySurfaceRule, "全部目录章节必须由唯一蒙版承载同一底色");
   assert.match(
     directorySurfaceRule,
     /position:\s*absolute;[\s\S]*?z-index:\s*1;[\s\S]*?inset:\s*0;[\s\S]*?content:\s*"";[\s\S]*?pointer-events:\s*none;/,
@@ -475,8 +500,8 @@ test("anchors directory chapters over a right-side reading surface", async () =>
   );
   assert.match(
     directorySurfaceRule,
-    /(?:^|\n)\s*mask-image:[\s\S]*?linear-gradient\(\s*90deg,\s*transparent 0 43%,[\s\S]*?#000 61% 100%[\s\S]*?linear-gradient\(\s*180deg,\s*transparent 0%,[\s\S]*?#000 14% 86%,[\s\S]*?transparent 100%/,
-    "桌面目录左缘与上下缘必须以同一底色逐级增浓，而不是硬切边界",
+    /(?:^|\n)\s*mask-image:[\s\S]*?linear-gradient\(\s*90deg,\s*transparent 0 43%,[\s\S]*?#000 61% 100%[\s\S]*?linear-gradient\(\s*180deg,\s*transparent 0%,[\s\S]*?#000 12svh calc\(100% - 12svh\),[\s\S]*?transparent 100%/,
+    "桌面目录左缘与整组首尾必须柔和过渡，章节交界保持连续实色",
   );
   assert.match(directorySurfaceRule, /(?:^|\n)\s*-webkit-mask-image:/);
   assert.match(directorySurfaceRule, /mask-composite:\s*intersect;/);
@@ -485,6 +510,11 @@ test("anchors directory chapters over a right-side reading surface", async () =>
     directorySurfaceRule,
     /calc\(50% - 1px\)|rgba\(32, 33, 30, 0\.08\)|\bborder(?:-[a-z-]+)?:|outline|box-shadow/,
     "目录上缘与左缘不得再出现深色分割线、边框或内阴影",
+  );
+  assert.doesNotMatch(
+    styles,
+    /\.spatial-chapter-directory::before\s*\{/,
+    "目录章节不得各自绘制背景，否则交界处会重复渐隐露底",
   );
   assert.match(directoryRule, /scroll-snap-align:\s*center;/);
   assert.match(directoryRule, /scroll-snap-stop:\s*normal;/);
@@ -510,7 +540,7 @@ test("anchors directory chapters over a right-side reading surface", async () =>
   );
   assert.match(
     styles,
-    /@media \(max-width: 800px\)[\s\S]*?\.spatial-chapter-directory::before\s*\{\s*content:\s*none;/,
+    /@media \(max-width: 800px\)[\s\S]*?\.spatial-directory-story::before\s*\{\s*content:\s*none;/,
     "窄屏不得叠加桌面右半屏蒙版",
   );
   assert.match(
