@@ -5,6 +5,9 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { loadSpatialAvatarModelBytes } from "./spatial-avatar-model";
 
 export interface StoryFrame {
+  cameraY: number;
+  cameraZ: number;
+  cameraTargetY: number;
   gazeX: number;
   gazeY: number;
   modelX: number;
@@ -79,6 +82,9 @@ const EYE_PITCH_AXIS = new THREE.Vector3(1, 0, 0);
 const MODEL_DAMPING = 8.5;
 const EYE_DAMPING = 13;
 const SETTLE_EPSILON = 0.00008;
+const DEFAULT_CAMERA_Y = 0.03;
+const DEFAULT_CAMERA_Z = 3.8;
+const DEFAULT_CAMERA_TARGET_Y = 0.02;
 export const PORTRAIT_TONE_MAPPING_EXPOSURE = 0.92;
 export const PORTRAIT_ENVIRONMENT_INTENSITY = 0.38;
 
@@ -150,6 +156,16 @@ export const mapPointerToGaze = (
   y: clamp((clientY - region.centerY) / Math.max(1, region.radiusY), -1, 1),
 });
 
+/** 按相机视图空间的纵深计算透视尺度，避免人物横向移动误触发缩放。 */
+export const readPortraitDepthScale = (
+  camera: THREE.Camera,
+  worldPosition: THREE.Vector3,
+  viewPosition = new THREE.Vector3(),
+): number => {
+  viewPosition.copy(worldPosition).applyMatrix4(camera.matrixWorldInverse);
+  return DEFAULT_CAMERA_Z / Math.max(0.5, -viewPosition.z);
+};
+
 /** 在两个关键值之间做线性插值，统一生成每个姿态通道。 */
 const interpolate = (from: number, to: number, amount: number): number =>
   from + (to - from) * amount;
@@ -158,12 +174,15 @@ const interpolate = (from: number, to: number, amount: number): number =>
 const easeStoryAmount = (amount: number): number =>
   amount * amount * (3 - 2 * amount);
 
-/** 为四个章节生成完整空间姿态；首尾保持原构图，中间两帧对应参考图。 */
+/** 为四个章节生成完整空间姿态；第一段使用高机位俯视，其余关键帧保留既有构图。 */
 export const createStoryFrames = (
   compact: boolean,
 ): readonly StoryFrame[] => {
   return [
     {
+      cameraY: DEFAULT_CAMERA_Y,
+      cameraZ: DEFAULT_CAMERA_Z,
+      cameraTargetY: DEFAULT_CAMERA_TARGET_Y,
       modelX: 0,
       modelY: compact ? 0.12 : -0.015,
       modelZ: 0,
@@ -175,17 +194,23 @@ export const createStoryFrames = (
       gazeY: 0.04,
     },
     {
+      cameraY: compact ? 2.3 : 1.9,
+      cameraZ: DEFAULT_CAMERA_Z,
+      cameraTargetY: compact ? -0.55 : -0.5,
       modelX: compact ? -0.06 : -0.7,
-      modelY: compact ? 0.1 : -0.12,
-      modelZ: compact ? 0.18 : 0.85,
-      scale: compact ? 0.94 : 1.08,
-      yaw: THREE.MathUtils.degToRad(compact ? -18 : -30),
-      pitch: THREE.MathUtils.degToRad(compact ? 11 : 18),
-      roll: THREE.MathUtils.degToRad(compact ? -1.5 : -2.5),
+      modelY: compact ? -0.05 : -0.16,
+      modelZ: compact ? 0.75 : 1.2,
+      scale: compact ? 1.05 : 1.38,
+      yaw: THREE.MathUtils.degToRad(compact ? -6 : -10),
+      pitch: THREE.MathUtils.degToRad(compact ? 4 : 6),
+      roll: THREE.MathUtils.degToRad(compact ? -0.3 : -1),
       gazeX: 0.42,
       gazeY: -0.03,
     },
     {
+      cameraY: DEFAULT_CAMERA_Y,
+      cameraZ: DEFAULT_CAMERA_Z,
+      cameraTargetY: DEFAULT_CAMERA_TARGET_Y,
       modelX: compact ? -0.05 : -0.64,
       modelY: compact ? 0.02 : -0.16,
       modelZ: compact ? 0.1 : 0.35,
@@ -197,6 +222,9 @@ export const createStoryFrames = (
       gazeY: -0.12,
     },
     {
+      cameraY: DEFAULT_CAMERA_Y,
+      cameraZ: DEFAULT_CAMERA_Z,
+      cameraTargetY: DEFAULT_CAMERA_TARGET_Y,
       modelX: compact ? 0.08 : 0.68,
       modelY: compact ? 0.09 : -0.04,
       modelZ: 0,
@@ -210,7 +238,7 @@ export const createStoryFrames = (
   ];
 };
 
-/** 在相邻章节之间同时插值 DOM 构图、模型姿态和目光目标。 */
+/** 在相邻章节之间同时插值相机、模型构图、身体姿态和目光目标。 */
 export const readStoryFrame = (
   progress: number,
   frames: readonly StoryFrame[],
@@ -224,6 +252,13 @@ export const readStoryFrame = (
   if (segmentAmount >= 1) return { ...to };
   const amount = easeStoryAmount(segmentAmount);
   return {
+    cameraY: interpolate(from.cameraY, to.cameraY, amount),
+    cameraZ: interpolate(from.cameraZ, to.cameraZ, amount),
+    cameraTargetY: interpolate(
+      from.cameraTargetY,
+      to.cameraTargetY,
+      amount,
+    ),
     modelX: interpolate(from.modelX, to.modelX, amount),
     modelY: interpolate(from.modelY, to.modelY, amount),
     modelZ: interpolate(from.modelZ, to.modelZ, amount),
@@ -395,8 +430,8 @@ export const initSpatialAvatarScene = (
   scene.environment = environmentRenderTarget.texture;
   scene.environmentIntensity = PORTRAIT_ENVIRONMENT_INTENSITY;
   const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 20);
-  camera.position.set(0, 0.03, 3.8);
-  camera.lookAt(0, 0.02, 0);
+  camera.position.set(0, DEFAULT_CAMERA_Y, DEFAULT_CAMERA_Z);
+  camera.lookAt(0, DEFAULT_CAMERA_TARGET_Y, 0);
 
   // 位移/纵深、章节角度和指针带动分别占一层，彼此叠加但不互相改写目标值。
   const portraitGroup = new THREE.Group();
@@ -437,6 +472,7 @@ export const initSpatialAvatarScene = (
   const eyeWorldPosition = new THREE.Vector3();
   const projectedEyeCenter = new THREE.Vector3();
   const portraitWorldPosition = new THREE.Vector3();
+  const portraitViewPosition = new THREE.Vector3();
   const projectedPortraitCenter = new THREE.Vector3();
   let storyFrames = createResponsiveStoryFrames();
   let storyMetrics = measureStory(page);
@@ -445,6 +481,9 @@ export const initSpatialAvatarScene = (
   let currentModelY = storyFrame.modelY;
   let currentModelZ = storyFrame.modelZ;
   let currentModelScale = storyFrame.scale;
+  let currentCameraY = storyFrame.cameraY;
+  let currentCameraZ = storyFrame.cameraZ;
+  let currentCameraTargetY = storyFrame.cameraTargetY;
   let currentYaw = storyFrame.yaw;
   let currentPitch = storyFrame.pitch;
   let currentRoll = storyFrame.roll;
@@ -454,6 +493,13 @@ export const initSpatialAvatarScene = (
   const gazeYaw = new THREE.Quaternion();
   const gazePitch = new THREE.Quaternion();
   const gazeRotation = new THREE.Quaternion();
+
+  /** 同步平滑后的相机轨道，让俯视来自真实观察位置并立即参与屏幕投影。 */
+  const updateCameraPresentation = (): void => {
+    camera.position.set(0, currentCameraY, currentCameraZ);
+    camera.lookAt(0, currentCameraTargetY, 0);
+    camera.updateMatrixWorld(true);
+  };
 
   /** 投影平滑后的模型中心，让影棚柔光位置和尺度始终跟随真实屏幕构图。 */
   const updateBackdropPresentation = (): void => {
@@ -473,8 +519,11 @@ export const initSpatialAvatarScene = (
       "--spatial-light-scale",
       clamp(
         currentModelScale *
-          (camera.position.z /
-            Math.max(0.5, camera.position.z - currentModelZ)),
+          readPortraitDepthScale(
+            camera,
+            portraitWorldPosition,
+            portraitViewPosition,
+          ),
         0.96,
         1.18,
       ).toFixed(4),
@@ -567,7 +616,7 @@ export const initSpatialAvatarScene = (
     frameId = window.requestAnimationFrame(renderFrame);
   };
 
-  /** 使用按时间计算的阻尼平滑模型构图、身体与目光，收敛后停止请求新帧。 */
+  /** 使用按时间计算的阻尼平滑相机、模型、身体与目光，收敛后停止请求新帧。 */
   const renderFrame = (time: number): void => {
     frameId = 0;
     if (
@@ -612,6 +661,21 @@ export const initSpatialAvatarScene = (
       storyFrame.scale,
       modelFactor,
     );
+    currentCameraY = THREE.MathUtils.lerp(
+      currentCameraY,
+      storyFrame.cameraY,
+      modelFactor,
+    );
+    currentCameraZ = THREE.MathUtils.lerp(
+      currentCameraZ,
+      storyFrame.cameraZ,
+      modelFactor,
+    );
+    currentCameraTargetY = THREE.MathUtils.lerp(
+      currentCameraTargetY,
+      storyFrame.cameraTargetY,
+      modelFactor,
+    );
     currentYaw = THREE.MathUtils.lerp(currentYaw, targetYaw, modelFactor);
     currentPitch = THREE.MathUtils.lerp(currentPitch, targetPitch, modelFactor);
     currentRoll = THREE.MathUtils.lerp(currentRoll, targetRoll, modelFactor);
@@ -633,6 +697,7 @@ export const initSpatialAvatarScene = (
       currentPointerYaw,
       0,
     );
+    updateCameraPresentation();
     updateBackdropPresentation();
     updateProjectedEyeCenter();
     updatePointerGaze();
@@ -647,6 +712,11 @@ export const initSpatialAvatarScene = (
       Math.abs(currentModelY - storyFrame.modelY) > SETTLE_EPSILON ||
       Math.abs(currentModelZ - storyFrame.modelZ) > SETTLE_EPSILON ||
       Math.abs(currentModelScale - storyFrame.scale) > SETTLE_EPSILON;
+    const cameraUnsettled =
+      Math.abs(currentCameraY - storyFrame.cameraY) > SETTLE_EPSILON ||
+      Math.abs(currentCameraZ - storyFrame.cameraZ) > SETTLE_EPSILON ||
+      Math.abs(currentCameraTargetY - storyFrame.cameraTargetY) >
+        SETTLE_EPSILON;
     const bodyUnsettled =
       Math.abs(currentYaw - targetYaw) > SETTLE_EPSILON ||
       Math.abs(currentPitch - targetPitch) > SETTLE_EPSILON ||
@@ -658,12 +728,12 @@ export const initSpatialAvatarScene = (
         1 - Math.abs(eye.pivot.quaternion.dot(eye.targetQuaternion)) >
         SETTLE_EPSILON,
     );
-    if (modelUnsettled || bodyUnsettled || eyesUnsettled) {
+    if (modelUnsettled || cameraUnsettled || bodyUnsettled || eyesUnsettled) {
       frameId = window.requestAnimationFrame(renderFrame);
     }
   };
 
-  /** 依据当前滚动位置更新三维构图、身体方向和默认目光。 */
+  /** 依据当前滚动位置更新相机轨道、三维构图、身体方向和默认目光。 */
   const updateStory = (): void => {
     storyFrame = readStoryFrame(readStoryProgress(storyMetrics), storyFrames);
     measureCanvasScreenRect();
@@ -879,6 +949,7 @@ export const initSpatialAvatarScene = (
         currentPointerYaw,
         0,
       );
+      updateCameraPresentation();
       updateBackdropPresentation();
       updateProjectedEyeCenter();
       updatePointerGaze();

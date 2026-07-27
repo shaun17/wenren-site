@@ -12,6 +12,7 @@ import {
   mapPointerToGaze,
   PORTRAIT_ENVIRONMENT_INTENSITY,
   PORTRAIT_TONE_MAPPING_EXPOSURE,
+  readPortraitDepthScale,
   readStoryFrame,
   setEyeTargetQuaternion,
 } from "../src/lib/spatial-avatar-scene.ts";
@@ -198,6 +199,9 @@ const readPortraitBounds = async (buffer) => {
 
 /** 把故事姿态转成固定顺序的数值向量，便于完整比较所有动画通道。 */
 const storyFrameValues = (frame) => [
+  frame.cameraY,
+  frame.cameraZ,
+  frame.cameraTargetY,
   frame.modelX,
   frame.modelY,
   frame.modelZ,
@@ -209,14 +213,17 @@ const storyFrameValues = (frame) => [
   frame.gazeY,
 ];
 
-/** 四章轨迹必须精确命中两张参考角度，同时逐值保留当前首尾状态。 */
-test("builds the two reference poses between unchanged story endpoints", () => {
+/** 四章轨迹必须精确命中俯视与仰视角度，同时逐值保留当前首尾状态。 */
+test("builds the overhead and low-angle poses between unchanged endpoints", () => {
   const desktop = createStoryFrames(false);
   const compact = createStoryFrames(true);
   assert.equal(desktop.length, 4);
   assert.equal(compact.length, 4);
 
   assert.deepEqual(desktop[0], {
+    cameraY: 0.03,
+    cameraZ: 3.8,
+    cameraTargetY: 0.02,
     modelX: 0,
     modelY: -0.015,
     modelZ: 0,
@@ -228,6 +235,9 @@ test("builds the two reference poses between unchanged story endpoints", () => {
     gazeY: 0.04,
   });
   assert.deepEqual(desktop[3], {
+    cameraY: 0.03,
+    cameraZ: 3.8,
+    cameraTargetY: 0.02,
     modelX: 0.68,
     modelY: -0.04,
     modelZ: 0,
@@ -239,6 +249,9 @@ test("builds the two reference poses between unchanged story endpoints", () => {
     gazeY: 0.02,
   });
   assert.deepEqual(compact[0], {
+    cameraY: 0.03,
+    cameraZ: 3.8,
+    cameraTargetY: 0.02,
     modelX: 0,
     modelY: 0.12,
     modelZ: 0,
@@ -250,6 +263,9 @@ test("builds the two reference poses between unchanged story endpoints", () => {
     gazeY: 0.04,
   });
   assert.deepEqual(compact[3], {
+    cameraY: 0.03,
+    cameraZ: 3.8,
+    cameraTargetY: 0.02,
     modelX: 0.08,
     modelY: 0.09,
     modelZ: 0,
@@ -262,17 +278,23 @@ test("builds the two reference poses between unchanged story endpoints", () => {
   });
 
   assertVectorClose(storyFrameValues(desktop[1]), [
+    1.9,
+    3.8,
+    -0.5,
     -0.7,
-    -0.12,
-    0.85,
-    1.08,
-    THREE.MathUtils.degToRad(-30),
-    THREE.MathUtils.degToRad(18),
-    THREE.MathUtils.degToRad(-2.5),
+    -0.16,
+    1.2,
+    1.38,
+    THREE.MathUtils.degToRad(-10),
+    THREE.MathUtils.degToRad(6),
+    THREE.MathUtils.degToRad(-1),
     0.42,
     -0.03,
   ]);
   assertVectorClose(storyFrameValues(desktop[2]), [
+    0.03,
+    3.8,
+    0.02,
     -0.64,
     -0.16,
     0.35,
@@ -284,17 +306,23 @@ test("builds the two reference poses between unchanged story endpoints", () => {
     -0.12,
   ]);
   assertVectorClose(storyFrameValues(compact[1]), [
+    2.3,
+    3.8,
+    -0.55,
     -0.06,
-    0.1,
-    0.18,
-    0.94,
-    THREE.MathUtils.degToRad(-18),
-    THREE.MathUtils.degToRad(11),
-    THREE.MathUtils.degToRad(-1.5),
+    -0.05,
+    0.75,
+    1.05,
+    THREE.MathUtils.degToRad(-6),
+    THREE.MathUtils.degToRad(4),
+    THREE.MathUtils.degToRad(-0.3),
     0.42,
     -0.03,
   ]);
   assertVectorClose(storyFrameValues(compact[2]), [
+    0.03,
+    3.8,
+    0.02,
     -0.05,
     0.02,
     0.1,
@@ -329,8 +357,35 @@ test("builds the two reference poses between unchanged story endpoints", () => {
       (value, index) => (value + desktopFirstValues[index]) / 2,
     ),
   );
+  const desktopSecondValues = storyFrameValues(desktop[2]);
+  const secondSegmentMiddle = readStoryFrame(1 / 2, desktop);
+  assertVectorClose(
+    storyFrameValues(secondSegmentMiddle),
+    desktopFirstValues.map(
+      (value, index) => (value + desktopSecondValues[index]) / 2,
+    ),
+  );
+  const desktopFinalValues = storyFrameValues(desktop[3]);
+  const finalSegmentMiddle = readStoryFrame(5 / 6, desktop);
+  assertVectorClose(
+    storyFrameValues(finalSegmentMiddle),
+    desktopSecondValues.map(
+      (value, index) => (value + desktopFinalValues[index]) / 2,
+    ),
+  );
   assert.ok(desktop[1].modelZ > desktop[2].modelZ);
-  assert.ok(desktop[1].yaw < 0 && desktop[1].pitch > 0);
+  const overheadCameraAngle = Math.atan2(
+    desktop[1].cameraY - desktop[1].cameraTargetY,
+    desktop[1].cameraZ,
+  );
+  assert.ok(overheadCameraAngle > THREE.MathUtils.degToRad(30));
+  assert.ok(Math.abs(desktop[1].yaw) < THREE.MathUtils.degToRad(15));
+  assert.ok(Math.abs(desktop[1].pitch) < THREE.MathUtils.degToRad(10));
+  const compactOverheadCameraAngle = Math.atan2(
+    compact[1].cameraY - compact[1].cameraTargetY,
+    compact[1].cameraZ,
+  );
+  assert.ok(compactOverheadCameraAngle > THREE.MathUtils.degToRad(35));
   assert.ok(desktop[2].yaw > 0 && desktop[2].pitch < 0);
   assert.ok(Math.abs(compact[1].yaw) < Math.abs(desktop[1].yaw));
   assert.ok(Math.abs(compact[2].pitch) < Math.abs(desktop[2].pitch));
@@ -519,6 +574,30 @@ test("detects WebGL2 support before preloading the avatar model", () => {
     }),
     false,
   );
+});
+
+/** 背景光尺度只响应相机纵深，人物左右换位不得被误判为远离镜头。 */
+test("measures portrait scale from camera depth instead of lateral travel", () => {
+  const camera = new THREE.PerspectiveCamera(30, 16 / 9, 0.1, 20);
+  camera.position.set(0, 0.03, 3.8);
+  camera.lookAt(0, 0.02, 0);
+  camera.updateMatrixWorld(true);
+
+  const centerScale = readPortraitDepthScale(
+    camera,
+    new THREE.Vector3(0, 0, 0),
+  );
+  const sideScale = readPortraitDepthScale(
+    camera,
+    new THREE.Vector3(0.68, 0, 0),
+  );
+  const nearScale = readPortraitDepthScale(
+    camera,
+    new THREE.Vector3(0, 0, 0.8),
+  );
+
+  assert.ok(Math.abs(centerScale - sideScale) < 1e-12);
+  assert.ok(nearScale > centerScale);
 });
 
 /** 空间肖像必须保留同模型海报、动态按需加载和完整资源释放路径。 */
@@ -767,8 +846,24 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
   assert.match(scene, /"--spatial-light-scale"/);
   assert.match(
     scene,
-    /camera\.position\.z - currentModelZ/,
+    /readPortraitDepthScale\([\s\S]*?camera,[\s\S]*?portraitWorldPosition/,
   );
+  assert.match(scene, /camera\.lookAt\(0, currentCameraTargetY, 0\)/);
+  assert.match(scene, /currentCameraY = THREE\.MathUtils\.lerp/);
+  assert.match(scene, /currentCameraZ = THREE\.MathUtils\.lerp/);
+  assert.match(scene, /currentCameraTargetY = THREE\.MathUtils\.lerp/);
+  assert.match(scene, /const cameraUnsettled =/);
+  assert.match(scene, /Math\.abs\(currentCameraY - storyFrame\.cameraY\)/);
+  assert.match(scene, /Math\.abs\(currentCameraZ - storyFrame\.cameraZ\)/);
+  assert.match(
+    scene,
+    /Math\.abs\(currentCameraTargetY - storyFrame\.cameraTargetY\)/,
+  );
+  assert.match(
+    scene,
+    /modelUnsettled \|\| cameraUnsettled \|\| bodyUnsettled \|\| eyesUnsettled/,
+  );
+  assert.match(scene, /updateCameraPresentation\(\);/);
   assert.match(
     scene,
     /updateBackdropPresentation\(\);\s*updateProjectedEyeCenter\(\);\s*updatePointerGaze\(\);\s*updateEyeTargets\(\)/,
@@ -1137,6 +1232,17 @@ test("keeps the optimized eye rig and textured geometry intact", async (t) => {
   displayFrame.rotation.y = -Math.PI / 2;
   displayFrame.add(gltf.scene);
   displayFrame.updateWorldMatrix(true, true);
+  const displayBounds = new THREE.Box3().setFromObject(displayFrame);
+  const displaySize = displayBounds.getSize(new THREE.Vector3());
+  const displayCenter = displayBounds.getCenter(new THREE.Vector3());
+  const displayScale = 1.9 / Math.max(displaySize.x, displaySize.y);
+  displayFrame.scale.setScalar(displayScale);
+  displayFrame.position.set(
+    -displayCenter.x * displayScale,
+    -displayCenter.y * displayScale + 0.01,
+    -displayCenter.z * displayScale,
+  );
+  displayFrame.updateWorldMatrix(true, true);
   const baseQuaternions = eyePairs.map(({ pivot }) => pivot.quaternion.clone());
   for (const [eyeIndex, { meshes, pivot }] of eyePairs.entries()) {
     const pupil = meshes.at(-1);
@@ -1167,26 +1273,74 @@ test("keeps the optimized eye rig and textured geometry intact", async (t) => {
     pivot.quaternion.copy(baseQuaternions[eyeIndex]);
   }
 
-  /** 在两张参考姿态和真实透视相机下，双眼仍必须沿屏幕方向追踪指针。 */
+  /** 读取瞳孔相对眼球枢轴的屏幕偏移，排除头肩伴随运动。 */
+  const readProjectedEyeOffset = (pupil, pivot, camera) => {
+    const pupilPosition = pupil
+      .getWorldPosition(new THREE.Vector3())
+      .project(camera);
+    const pivotPosition = pivot
+      .getWorldPosition(new THREE.Vector3())
+      .project(camera);
+    return pupilPosition.sub(pivotPosition);
+  };
+
+  /** 在完整运行时层级和真实透视相机下，双眼仍必须沿屏幕方向追踪指针。 */
+  const portraitStage = new THREE.Group();
   const storyPoseGroup = new THREE.Group();
-  storyPoseGroup.add(displayFrame);
+  const pointerBodyGroup = new THREE.Group();
+  pointerBodyGroup.add(displayFrame);
+  storyPoseGroup.add(pointerBodyGroup);
+  portraitStage.add(storyPoseGroup);
   const storyCamera = new THREE.PerspectiveCamera(30, 16 / 9, 0.1, 20);
-  storyCamera.position.set(0, 0.03, 3.8);
-  storyCamera.lookAt(0, 0.02, 0);
-  storyCamera.updateWorldMatrix(true, false);
-  for (const pose of createStoryFrames(false).slice(1, 3)) {
-    storyPoseGroup.position.set(pose.modelX, pose.modelY, pose.modelZ);
-    storyPoseGroup.scale.setScalar(pose.scale);
+  const desktopStoryFrames = createStoryFrames(false);
+  const compactStoryFrames = createStoryFrames(true);
+  const transitionProgresses = [1 / 6, 1 / 2, 5 / 6];
+  const storyPoseCases = [
+    ...desktopStoryFrames
+      .slice(1)
+      .map((pose) => ({ aspect: 16 / 9, pose })),
+    ...transitionProgresses.map((progress) => ({
+      aspect: 16 / 9,
+      pose: readStoryFrame(progress, desktopStoryFrames),
+    })),
+    ...compactStoryFrames
+      .slice(1)
+      .map((pose) => ({ aspect: 390 / 844, pose })),
+    ...transitionProgresses.map((progress) => ({
+      aspect: 390 / 844,
+      pose: readStoryFrame(progress, compactStoryFrames),
+    })),
+  ];
+  for (const { aspect, pose } of storyPoseCases) {
+    storyCamera.aspect = aspect;
+    storyCamera.updateProjectionMatrix();
+    storyCamera.position.set(0, pose.cameraY, pose.cameraZ);
+    storyCamera.lookAt(0, pose.cameraTargetY, 0);
+    storyCamera.updateWorldMatrix(true, false);
+    portraitStage.position.set(pose.modelX, pose.modelY, pose.modelZ);
+    portraitStage.scale.setScalar(pose.scale);
     storyPoseGroup.rotation.set(pose.pitch, pose.yaw, pose.roll);
     for (const [eyeIndex, { meshes, pivot }] of eyePairs.entries()) {
       eyePairs.forEach(({ pivot: candidate }, index) =>
         candidate.quaternion.copy(baseQuaternions[index]),
       );
-      storyPoseGroup.updateWorldMatrix(true, true);
+      pointerBodyGroup.rotation.set(0, 0, 0);
+      portraitStage.updateWorldMatrix(true, true);
       const pupil = meshes.at(-1);
       const center = pupil
         .getWorldPosition(new THREE.Vector3())
         .project(storyCamera);
+      const centerOffset = readProjectedEyeOffset(
+        pupil,
+        pivot,
+        storyCamera,
+      );
+      assert.ok(
+        Math.abs(center.x) < 1 &&
+          Math.abs(center.y) < 1 &&
+          Math.abs(center.z) < 1,
+        "故事姿态中的双眼必须保持在可见画面内",
+      );
       const targetQuaternion = new THREE.Quaternion();
 
       setEyeTargetQuaternion(
@@ -1196,7 +1350,7 @@ test("keeps the optimized eye rig and textured geometry intact", async (t) => {
         0,
       );
       pivot.quaternion.copy(targetQuaternion);
-      storyPoseGroup.updateWorldMatrix(true, true);
+      portraitStage.updateWorldMatrix(true, true);
       const right = pupil
         .getWorldPosition(new THREE.Vector3())
         .project(storyCamera);
@@ -1204,7 +1358,19 @@ test("keeps the optimized eye rig and textured geometry intact", async (t) => {
         right.x > center.x + 0.00001,
         "参考姿态中鼠标向右仍必须让瞳孔投影向右",
       );
+      pointerBodyGroup.rotation.y = 0.105;
+      portraitStage.updateWorldMatrix(true, true);
+      const rightWithBody = readProjectedEyeOffset(
+        pupil,
+        pivot,
+        storyCamera,
+      );
+      assert.ok(
+        rightWithBody.x > centerOffset.x + 0.00001,
+        "头肩伴随鼠标后，瞳孔相对眼眶仍必须向右",
+      );
 
+      pointerBodyGroup.rotation.set(0, 0, 0);
       pivot.quaternion.copy(baseQuaternions[eyeIndex]);
       setEyeTargetQuaternion(
         baseQuaternions[eyeIndex],
@@ -1213,7 +1379,7 @@ test("keeps the optimized eye rig and textured geometry intact", async (t) => {
         1,
       );
       pivot.quaternion.copy(targetQuaternion);
-      storyPoseGroup.updateWorldMatrix(true, true);
+      portraitStage.updateWorldMatrix(true, true);
       const down = pupil
         .getWorldPosition(new THREE.Vector3())
         .project(storyCamera);
@@ -1221,15 +1387,27 @@ test("keeps the optimized eye rig and textured geometry intact", async (t) => {
         down.y < center.y - 0.00001,
         "参考姿态中鼠标向下仍必须让瞳孔投影向下",
       );
+      pointerBodyGroup.rotation.x = -0.055;
+      portraitStage.updateWorldMatrix(true, true);
+      const downWithBody = readProjectedEyeOffset(
+        pupil,
+        pivot,
+        storyCamera,
+      );
+      assert.ok(
+        downWithBody.y < centerOffset.y - 0.00001,
+        "头肩伴随鼠标后，瞳孔相对眼眶仍必须向下",
+      );
     }
   }
   eyePairs.forEach(({ pivot }, index) =>
     pivot.quaternion.copy(baseQuaternions[index]),
   );
-  storyPoseGroup.position.set(0, 0, 0);
-  storyPoseGroup.scale.setScalar(1);
+  portraitStage.position.set(0, 0, 0);
+  portraitStage.scale.setScalar(1);
   storyPoseGroup.rotation.set(0, 0, 0);
-  storyPoseGroup.updateWorldMatrix(true, true);
+  pointerBodyGroup.rotation.set(0, 0, 0);
+  portraitStage.updateWorldMatrix(true, true);
 
   const localVertices = eyePairs.map(({ meshes }) =>
     meshes.map((mesh) => readObservableMeshVertex(mesh)),
