@@ -1,4 +1,5 @@
 import { spatialAvatarAssets } from "../config/spatial-avatar-assets";
+import { SPATIAL_AVATAR_READING_PHASE_RATIO } from "../config/spatial-avatar-layout";
 
 type SceneCleanup = () => void;
 
@@ -46,6 +47,30 @@ export const initSpatialPortrait = (root: HTMLElement): SceneCleanup => {
   let loadVersion = 0;
   let isDisposed = false;
   let staticPosterLoad: Promise<boolean> | null = null;
+  let phaseUpdateId = 0;
+
+  /** 同步首屏与阅读态，静态降级在边界处直接换图而不制造额外动画。 */
+  const updatePortraitPhase = (): void => {
+    const hero = page.querySelector<HTMLElement>("[data-spatial-hero]");
+    const pageTop = page.getBoundingClientRect().top + window.scrollY;
+    const transitionDistance =
+      (hero?.offsetHeight ?? window.innerHeight) *
+      SPATIAL_AVATAR_READING_PHASE_RATIO;
+    const isContentPhase = window.scrollY - pageTop >= transitionDistance;
+    page.classList.toggle("is-content-phase", isContentPhase);
+    if (isContentPhase && !root.classList.contains("is-webgl-ready")) {
+      void ensureStaticPoster();
+    }
+  };
+
+  /** 合并高频滚动事件，确保降级海报每帧最多判断一次展示阶段。 */
+  const schedulePortraitPhaseUpdate = (): void => {
+    if (phaseUpdateId || isDisposed) return;
+    phaseUpdateId = window.requestAnimationFrame(() => {
+      phaseUpdateId = 0;
+      updatePortraitPhase();
+    });
+  };
 
   /** 按需加载静态降级海报；正常 WebGL 首屏不会为不可见图片浪费请求。 */
   const loadStaticPoster = (): Promise<boolean> => {
@@ -57,10 +82,15 @@ export const initSpatialPortrait = (root: HTMLElement): SceneCleanup => {
     staticPosterSource.srcset = staticPosterSource.dataset.srcset ?? "";
     staticPosterImage.src = staticPosterImage.dataset.src ?? "";
     if (staticPosterImage.complete) {
-      return Promise.resolve(staticPosterImage.naturalWidth > 0);
+      const loaded = staticPosterImage.naturalWidth > 0;
+      if (!loaded) {
+        staticPosterSource.removeAttribute("srcset");
+        staticPosterImage.removeAttribute("src");
+      }
+      return Promise.resolve(loaded);
     }
 
-    staticPosterLoad = new Promise<boolean>((resolve) => {
+    const loadAttempt = new Promise<boolean>((resolve) => {
       /** 收敛图片加载、失败与页面释放三种结果，并移除本次临时监听器。 */
       const finish = (loaded: boolean): void => {
         staticPosterImage.removeEventListener("load", handleLoad);
@@ -75,8 +105,24 @@ export const initSpatialPortrait = (root: HTMLElement): SceneCleanup => {
       staticPosterImage.addEventListener("error", handleError, { once: true });
       signal.addEventListener("abort", handleAbort, { once: true });
     });
+    staticPosterLoad = loadAttempt.then((loaded) => {
+      if (!loaded) {
+        staticPosterLoad = null;
+        staticPosterSource.removeAttribute("srcset");
+        staticPosterImage.removeAttribute("src");
+      }
+      return loaded;
+    });
     return staticPosterLoad;
   };
+
+  /** 只有静态海报真实加载成功后才允许 CSS 切图，失败时继续保留可用近景。 */
+  const ensureStaticPoster = (): Promise<boolean> =>
+    loadStaticPoster().then((loaded) => {
+      if (isDisposed) return false;
+      root.classList.toggle("is-static-poster-ready", loaded);
+      return loaded;
+    });
 
   /** WebGL 可用后再让模型与 Three.js 场景包并行下载，避免无能力设备获取完整 GLB。 */
   const preloadSpatialAvatarModel = (): void => {
@@ -106,7 +152,7 @@ export const initSpatialPortrait = (root: HTMLElement): SceneCleanup => {
     );
     page.classList.add("is-spatial-static");
     if (status) status.textContent = message;
-    void loadStaticPoster().then((loaded) => {
+    void ensureStaticPoster().then((loaded) => {
       if (!loaded || isDisposed || version !== loadVersion) return;
       root.classList.add(rootClass);
     });
@@ -146,6 +192,9 @@ export const initSpatialPortrait = (root: HTMLElement): SceneCleanup => {
           page.classList.remove("is-spatial-static");
           if (status) status.textContent = "三维人物模型已加载。";
         },
+        onStaticPosterRequested: (): void => {
+          void ensureStaticPoster();
+        },
         onUnavailable: (message: string): void => {
           if (isDisposed || version !== loadVersion) return;
           activateStaticPoster("is-webgl-unavailable", message);
@@ -174,14 +223,27 @@ export const initSpatialPortrait = (root: HTMLElement): SceneCleanup => {
     if (isDisposed) return;
     isDisposed = true;
     loadVersion += 1;
+    if (phaseUpdateId) window.cancelAnimationFrame(phaseUpdateId);
+    phaseUpdateId = 0;
     abortController.abort();
     sceneCleanup?.();
     sceneCleanup = null;
+    root.classList.remove("is-static-poster-ready");
+    page.classList.remove("is-content-phase");
     delete root.dataset.spatialInitialized;
   };
 
+  window.addEventListener("scroll", schedulePortraitPhaseUpdate, {
+    passive: true,
+    signal,
+  });
+  window.addEventListener("resize", schedulePortraitPhaseUpdate, {
+    passive: true,
+    signal,
+  });
   motionPreference.addEventListener("change", reconcileMotionPreference, { signal });
   document.addEventListener("astro:before-swap", cleanup, { once: true, signal });
+  updatePortraitPhase();
   reconcileMotionPreference();
   return cleanup;
 };

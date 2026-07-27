@@ -5,7 +5,7 @@
   --spatial-muted: rgba(32, 33, 30, 0.64);
   --spatial-line: rgba(32, 33, 30, 0.22);
   position: relative;
-  min-height: 400svh;
+  min-height: 500svh;
   overflow: clip;
   background: #e8e5db;
   color: var(--spatial-ink);
@@ -126,7 +126,7 @@
   overflow: hidden;
 }
 
-/* 中层柔光与承托色池作为一个合成层平移，跟随四章人物构图而不改变色相。 */
+/* 中层柔光与承托色池作为一个合成层，只跟随首屏到阅读态的一次换位。 */
 .spatial-portrait::before {
   position: absolute;
   z-index: 0;
@@ -188,19 +188,19 @@
   transition: opacity 420ms ease;
 }
 
-/* 加载态与降级态各自保留正确构图，避免首帧居中和后续静态章节互相牺牲。 */
+/* 加载态与降级态各自保留正确构图，避免首屏近景和阅读态左栏互相牺牲。 */
 .spatial-portrait-static-poster {
   opacity: 0;
 }
 
 .spatial-portrait.is-static .spatial-portrait-loading-poster,
 .spatial-portrait.is-webgl-unavailable .spatial-portrait-loading-poster {
-  opacity: 0;
+  opacity: 1;
 }
 
 .spatial-portrait.is-static .spatial-portrait-static-poster,
 .spatial-portrait.is-webgl-unavailable .spatial-portrait-static-poster {
-  opacity: 1;
+  opacity: 0;
 }
 
 .spatial-portrait-fallback-image {
@@ -209,6 +209,12 @@
   height: 100%;
   object-fit: cover;
   object-position: center;
+}
+
+/* 首屏海报与真实模型使用相同的近景比例，避免 WebGL 接管时人物突然放大。 */
+.spatial-portrait-loading-poster .spatial-portrait-fallback-image {
+  transform: scale(1.48);
+  transform-origin: 50% 5%;
 }
 
 .spatial-portrait-canvas {
@@ -230,6 +236,19 @@
   display: none;
 }
 
+/* 减少动态与 WebGL 降级也保留两阶段构图，并在阅读态无动画地换成左置海报。 */
+.spatial-page.is-content-phase
+  .spatial-portrait.is-static-poster-ready:not(.is-webgl-ready)
+  .spatial-portrait-loading-poster {
+  opacity: 0;
+}
+
+.spatial-page.is-content-phase
+  .spatial-portrait.is-static-poster-ready:not(.is-webgl-ready)
+  .spatial-portrait-static-poster {
+  opacity: 1;
+}
+
 .spatial-portrait-status {
   position: absolute;
   width: 1px;
@@ -242,9 +261,15 @@
   border: 0;
 }
 
+.spatial-hero,
 .spatial-story {
   position: relative;
   z-index: 2;
+}
+
+.spatial-hero {
+  min-height: 100svh;
+  pointer-events: none;
 }
 
 .spatial-chapter {
@@ -256,33 +281,14 @@
   pointer-events: none;
 }
 
+.spatial-chapter-directory {
+  justify-content: flex-end;
+}
+
 .spatial-copy {
   width: min(36vw, 31rem);
   text-shadow: 0 1px 1.6rem rgba(255, 255, 255, 0.22);
   pointer-events: auto;
-}
-
-.spatial-chapter-build,
-.spatial-chapter-detail {
-  justify-content: flex-end;
-}
-
-.spatial-chapter-intro {
-  padding-bottom: clamp(5.5rem, 10vh, 7.5rem);
-  align-items: flex-end;
-  justify-content: center;
-  text-align: center;
-}
-
-.spatial-copy-intro {
-  width: min(76vw, 47rem);
-  color: #f7f2e7;
-  text-shadow: 0 1px 1.4rem rgba(24, 23, 20, 0.72);
-}
-
-.spatial-copy-intro .spatial-eyebrow,
-.spatial-copy-intro .spatial-summary {
-  color: rgba(247, 242, 231, 0.82);
 }
 
 .spatial-eyebrow {
@@ -327,8 +333,7 @@
 }
 
 .spatial-summary {
-  max-width: 43rem;
-  margin-inline: auto;
+  max-width: 29rem;
 }
 
 .spatial-summary p {
@@ -362,6 +367,19 @@
 
 .spatial-links a span {
   font-size: 1.1em;
+}
+
+.spatial-hero-marker {
+  position: absolute;
+  bottom: clamp(2.75rem, 6vh, 3.5rem);
+  left: 50%;
+  margin: 0;
+  color: rgba(247, 242, 231, 0.88);
+  font-family: var(--font-mono);
+  font-size: clamp(0.62rem, 0.7vw, 0.7rem);
+  letter-spacing: 0.14em;
+  text-shadow: 0 1px 1.2rem rgba(24, 23, 20, 0.76);
+  transform: translateX(-50%);
 }
 
 .spatial-scroll-cue {
@@ -456,6 +474,11 @@
       );
   }
 
+  .spatial-portrait-loading-poster .spatial-portrait-fallback-image {
+    transform: scale(1.28);
+    transform-origin: 50% 0;
+  }
+
   .spatial-header {
     padding: 1rem;
   }
@@ -463,10 +486,6 @@
   .spatial-chapter {
     padding: 5.5rem 1rem 2.75rem;
     align-items: flex-end;
-  }
-
-  .spatial-chapter-intro {
-    padding-bottom: clamp(6.25rem, 15svh, 8rem);
   }
 
   .spatial-copy {
@@ -477,14 +496,6 @@
     background: rgba(239, 236, 226, 0.78);
     box-shadow: 0 1.5rem 4rem rgba(48, 47, 43, 0.12);
     backdrop-filter: blur(14px);
-  }
-
-  .spatial-copy-intro {
-    padding: 0;
-    border: 0;
-    background: transparent;
-    box-shadow: none;
-    backdrop-filter: none;
   }
 
   .spatial-copy h1 {
@@ -515,6 +526,10 @@
   .spatial-scroll-cue {
     display: none;
   }
+
+  .spatial-hero-marker {
+    bottom: 2.75rem;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -535,11 +550,4 @@
     min-height: 2.2rem;
     padding-block: 0.5rem;
   }
-}
-
-/* 静态回退海报已把人物构图烘焙在左侧，整幅背景保持满屏且不会露出接缝。 */
-.spatial-page.is-spatial-static .spatial-chapter-build,
-.spatial-page.is-spatial-static .spatial-chapter-detail,
-.spatial-page.is-spatial-static .spatial-chapter-record {
-  justify-content: flex-end;
 }

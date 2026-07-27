@@ -7,13 +7,15 @@ import sharp from "sharp";
 import * as THREE from "three";
 import { spatialAvatarAssets } from "../src/config/spatial-avatar-assets.ts";
 import {
+  canPresentSpatialAvatarScene,
   createPortraitLightRig,
-  createStoryFrames,
+  createPortraitLayoutFrames,
   mapPointerToGaze,
   PORTRAIT_ENVIRONMENT_INTENSITY,
   PORTRAIT_TONE_MAPPING_EXPOSURE,
+  readPortraitLayoutFrame,
+  readPortraitLayoutProgress,
   readPortraitDepthScale,
-  readStoryFrame,
   setEyeTargetQuaternion,
 } from "../src/lib/spatial-avatar-scene.ts";
 import {
@@ -197,198 +199,64 @@ const readPortraitBounds = async (buffer) => {
   };
 };
 
-/** 把故事姿态转成固定顺序的数值向量，便于完整比较所有动画通道。 */
-const storyFrameValues = (frame) => [
-  frame.cameraY,
-  frame.cameraZ,
-  frame.cameraTargetY,
+/** 把肖像布局帧转成固定顺序的向量，集中比较仅允许滚动改变的三个通道。 */
+const portraitLayoutFrameValues = (frame) => [
   frame.modelX,
   frame.modelY,
-  frame.modelZ,
   frame.scale,
-  frame.yaw,
-  frame.pitch,
-  frame.roll,
-  frame.gazeX,
-  frame.gazeY,
 ];
 
-/** 四章轨迹必须精确命中俯视与仰视角度，同时逐值保留当前首尾状态。 */
-test("builds the overhead and low-angle poses between unchanged endpoints", () => {
-  const desktop = createStoryFrames(false);
-  const compact = createStoryFrames(true);
-  assert.equal(desktop.length, 4);
-  assert.equal(compact.length, 4);
+/** 肖像只从首屏近景过渡一次到阅读态，超过首屏距离后必须永久固定。 */
+test("transitions once from the centered close-up to the stable reading layout", () => {
+  const desktop = createPortraitLayoutFrames(false);
+  const compact = createPortraitLayoutFrames(true);
+  assert.equal(desktop.length, 2);
+  assert.equal(compact.length, 2);
 
-  assert.deepEqual(desktop[0], {
-    cameraY: 0.03,
-    cameraZ: 3.8,
-    cameraTargetY: 0.02,
-    modelX: 0,
-    modelY: -0.015,
-    modelZ: 0,
-    scale: 1,
-    yaw: -0.025,
-    pitch: 0.01,
-    roll: 0,
-    gazeX: 0,
-    gazeY: 0.04,
-  });
-  assert.deepEqual(desktop[3], {
-    cameraY: 0.03,
-    cameraZ: 3.8,
-    cameraTargetY: 0.02,
-    modelX: 0.68,
-    modelY: -0.04,
-    modelZ: 0,
-    scale: 1.04,
-    yaw: -0.12,
-    pitch: 0.015,
-    roll: 0,
-    gazeX: -0.42,
-    gazeY: 0.02,
-  });
-  assert.deepEqual(compact[0], {
-    cameraY: 0.03,
-    cameraZ: 3.8,
-    cameraTargetY: 0.02,
-    modelX: 0,
-    modelY: 0.12,
-    modelZ: 0,
-    scale: 0.92,
-    yaw: -0.025,
-    pitch: 0.01,
-    roll: 0,
-    gazeX: 0,
-    gazeY: 0.04,
-  });
-  assert.deepEqual(compact[3], {
-    cameraY: 0.03,
-    cameraZ: 3.8,
-    cameraTargetY: 0.02,
-    modelX: 0.08,
-    modelY: 0.09,
-    modelZ: 0,
-    scale: 0.96,
-    yaw: -0.035,
-    pitch: 0.015,
-    roll: 0,
-    gazeX: -0.42,
-    gazeY: 0.02,
-  });
+  for (const frame of [...desktop, ...compact]) {
+    assert.deepEqual(Object.keys(frame).sort(), ["modelX", "modelY", "scale"]);
+    assert.ok(portraitLayoutFrameValues(frame).every(Number.isFinite));
+    assert.ok(frame.scale > 0);
+  }
 
-  assertVectorClose(storyFrameValues(desktop[1]), [
-    1.9,
-    3.8,
-    -0.5,
-    -0.67,
-    -0.12,
-    1.2,
-    1.41,
-    THREE.MathUtils.degToRad(-20),
-    THREE.MathUtils.degToRad(10),
-    THREE.MathUtils.degToRad(-3),
-    0.42,
-    -0.03,
-  ]);
-  assertVectorClose(storyFrameValues(desktop[2]), [
-    -0.45,
-    3.8,
-    0.02,
-    -0.67,
-    -0.16,
-    0.35,
-    1.14,
-    THREE.MathUtils.degToRad(36),
-    THREE.MathUtils.degToRad(-20),
-    THREE.MathUtils.degToRad(3.5),
-    0.5,
-    -0.12,
-  ]);
-  assertVectorClose(storyFrameValues(compact[1]), [
-    2.3,
-    3.8,
-    -0.55,
-    -0.05,
-    0,
-    0.75,
-    1.05,
-    THREE.MathUtils.degToRad(-14),
-    THREE.MathUtils.degToRad(8),
-    THREE.MathUtils.degToRad(-1.5),
-    0.42,
-    -0.03,
-  ]);
-  assertVectorClose(storyFrameValues(compact[2]), [
-    -0.35,
-    3.8,
-    0.02,
-    -0.06,
-    0.05,
-    0.1,
-    1,
-    THREE.MathUtils.degToRad(24),
-    THREE.MathUtils.degToRad(-14),
-    THREE.MathUtils.degToRad(2),
-    0.5,
-    -0.12,
-  ]);
+  assert.equal(desktop[0].modelX, 0, "桌面首屏近景必须水平居中");
+  assert.ok(desktop[1].modelX < 0, "桌面阅读态必须把完整模型固定到左侧");
+  assert.equal(compact[0].modelX, 0, "移动端首屏近景必须水平居中");
+  assert.equal(compact[1].modelX, 0, "移动端阅读态必须继续保持水平居中");
+  assert.ok(desktop[0].scale > desktop[1].scale, "桌面首屏必须比阅读态更近");
+  assert.ok(compact[0].scale > compact[1].scale, "移动端首屏必须比阅读态更近");
 
-  assert.deepEqual(readStoryFrame(-1, desktop), desktop[0]);
-  assert.deepEqual(readStoryFrame(1 / 3, desktop), desktop[1]);
-  assert.deepEqual(readStoryFrame(2 / 3, desktop), desktop[2]);
-  assert.deepEqual(readStoryFrame(2, desktop), desktop[3]);
+  assert.equal(readPortraitLayoutProgress(80, 100, 600), 0);
+  assert.equal(readPortraitLayoutProgress(100, 100, 600), 0);
+  assert.equal(readPortraitLayoutProgress(400, 100, 600), 0.5);
+  assert.equal(readPortraitLayoutProgress(700, 100, 600), 1);
+  assert.equal(readPortraitLayoutProgress(2_500, 100, 600), 1);
 
-  const desktopStartValues = storyFrameValues(desktop[0]);
-  const desktopFirstValues = storyFrameValues(desktop[1]);
-  const firstSegmentQuarter = readStoryFrame(1 / 12, desktop);
-  const quarterEase = 0.15625; // smoothstep(0.25)，锁定关键帧前后的减速曲线。
   assertVectorClose(
-    storyFrameValues(firstSegmentQuarter),
-    desktopStartValues.map(
+    portraitLayoutFrameValues(readPortraitLayoutFrame(-1, desktop)),
+    portraitLayoutFrameValues(desktop[0]),
+  );
+  assertVectorClose(
+    portraitLayoutFrameValues(readPortraitLayoutFrame(2, desktop)),
+    portraitLayoutFrameValues(desktop[1]),
+  );
+  const desktopMiddle = readPortraitLayoutFrame(0.5, desktop);
+  assertVectorClose(
+    portraitLayoutFrameValues(desktopMiddle),
+    portraitLayoutFrameValues(desktop[0]).map(
       (value, index) =>
-        value + (desktopFirstValues[index] - value) * quarterEase,
+        (value + portraitLayoutFrameValues(desktop[1])[index]) / 2,
     ),
   );
-  const firstSegmentMiddle = readStoryFrame(1 / 6, desktop);
-  assertVectorClose(
-    storyFrameValues(firstSegmentMiddle),
-    desktopStartValues.map(
-      (value, index) => (value + desktopFirstValues[index]) / 2,
-    ),
-  );
-  const desktopSecondValues = storyFrameValues(desktop[2]);
-  const secondSegmentMiddle = readStoryFrame(1 / 2, desktop);
-  assertVectorClose(
-    storyFrameValues(secondSegmentMiddle),
-    desktopFirstValues.map(
-      (value, index) => (value + desktopSecondValues[index]) / 2,
-    ),
-  );
-  const desktopFinalValues = storyFrameValues(desktop[3]);
-  const finalSegmentMiddle = readStoryFrame(5 / 6, desktop);
-  assertVectorClose(
-    storyFrameValues(finalSegmentMiddle),
-    desktopSecondValues.map(
-      (value, index) => (value + desktopFinalValues[index]) / 2,
-    ),
-  );
-  assert.ok(desktop[1].modelZ > desktop[2].modelZ);
-  const overheadCameraAngle = Math.atan2(
-    desktop[1].cameraY - desktop[1].cameraTargetY,
-    desktop[1].cameraZ,
-  );
-  assert.ok(overheadCameraAngle > THREE.MathUtils.degToRad(30));
-  assert.ok(Math.abs(desktop[1].yaw) >= THREE.MathUtils.degToRad(20));
-  assert.ok(Math.abs(desktop[1].pitch) >= THREE.MathUtils.degToRad(10));
-  const compactOverheadCameraAngle = Math.atan2(
-    compact[1].cameraY - compact[1].cameraTargetY,
-    compact[1].cameraZ,
-  );
-  assert.ok(compactOverheadCameraAngle > THREE.MathUtils.degToRad(35));
-  assert.ok(desktop[2].yaw > 0 && desktop[2].pitch < 0);
-  assert.ok(Math.abs(compact[1].yaw) < Math.abs(desktop[1].yaw));
-  assert.ok(Math.abs(compact[2].pitch) < Math.abs(desktop[2].pitch));
+
+  for (const scrollY of [700, 1_000, 1_900, 4_000]) {
+    const progress = readPortraitLayoutProgress(scrollY, 100, 600);
+    assert.equal(progress, 1);
+    assertVectorClose(
+      portraitLayoutFrameValues(readPortraitLayoutFrame(progress, desktop)),
+      portraitLayoutFrameValues(desktop[1]),
+    );
+  }
 });
 
 /** 肖像灯光必须显著抬亮正面，并以中性环境反射补足 PBR 材质层次。 */
@@ -600,6 +468,199 @@ test("measures portrait scale from camera depth instead of lateral travel", () =
   assert.ok(nearScale > centerScale);
 });
 
+/** 静态降级必须先请求并成功加载阅读态海报，失败时清理本次请求以允许后续重试。 */
+test("gates the retryable static poster fallback on image readiness", async () => {
+  const [bootstrap, scene, styles] = await Promise.all([
+    readFile(
+      new URL("../src/lib/spatial-portrait.ts", import.meta.url),
+      "utf8",
+    ),
+    readFile(
+      new URL("../src/lib/spatial-avatar-scene.ts", import.meta.url),
+      "utf8",
+    ),
+    readFile(new URL("../src/styles/avatar.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(scene, /onStaticPosterRequested: \(\) => void/);
+  assert.match(
+    scene,
+    /"webglcontextlost"[\s\S]*?root\.classList\.add\("is-webgl-unavailable"\);[\s\S]*?callbacks\.onStaticPosterRequested\(\);/,
+    "WebGL 上下文丢失后必须明确请求静态海报",
+  );
+  assert.match(
+    bootstrap,
+    /onStaticPosterRequested:\s*\(\): void => \{\s*void ensureStaticPoster\(\);\s*\}/,
+    "场景请求必须接入统一的静态海报加载入口",
+  );
+
+  assert.match(
+    bootstrap,
+    /const ensureStaticPoster = \(\): Promise<boolean> =>\s*loadStaticPoster\(\)\.then\(\(loaded\) => \{\s*if \(isDisposed\) return false;\s*root\.classList\.toggle\("is-static-poster-ready", loaded\);\s*return loaded;/,
+    "只有图片加载 Promise 成功结算后才允许写入就绪状态",
+  );
+  assert.match(
+    bootstrap,
+    /void ensureStaticPoster\(\)\.then\(\(loaded\) => \{\s*if \(!loaded \|\| isDisposed \|\| version !== loadVersion\) return;\s*root\.classList\.add\(rootClass\);/,
+    "失败、已释放或过期的加载结果都不得激活静态降级 class",
+  );
+  assert.doesNotMatch(
+    bootstrap,
+    /classList\.add\("is-static-poster-ready"\)/,
+    "就绪 class 不得在异步加载完成前直接写入",
+  );
+  assert.equal(
+    (
+      bootstrap.match(
+        /classList\.(?:add|toggle)\("is-static-poster-ready"/g,
+      ) ?? []
+    ).length,
+    1,
+    "静态海报就绪状态必须只有加载结果这一处写入口",
+  );
+
+  assert.match(
+    bootstrap,
+    /if \(staticPosterLoad\) return staticPosterLoad;/,
+    "同一次图片加载期间必须复用请求",
+  );
+  assert.match(
+    bootstrap,
+    /if \(staticPosterImage\.complete\) \{\s*const loaded = staticPosterImage\.naturalWidth > 0;\s*if \(!loaded\) \{\s*staticPosterSource\.removeAttribute\("srcset"\);\s*staticPosterImage\.removeAttribute\("src"\);\s*\}\s*return Promise\.resolve\(loaded\);/,
+    "浏览器缓存中的失败图片也必须清理资源属性",
+  );
+  assert.match(
+    bootstrap,
+    /staticPosterLoad = loadAttempt\.then\(\(loaded\) => \{\s*if \(!loaded\) \{\s*staticPosterLoad = null;\s*staticPosterSource\.removeAttribute\("srcset"\);\s*staticPosterImage\.removeAttribute\("src"\);\s*\}\s*return loaded;/,
+    "异步失败必须清空 Promise 与资源属性，让后续调用重新发起加载",
+  );
+  assert.match(bootstrap, /const handleError = \(\): void => finish\(false\)/);
+  assert.match(bootstrap, /root\.classList\.remove\("is-static-poster-ready"\)/);
+
+  assert.match(
+    styles,
+    /\.spatial-portrait\.is-static \.spatial-portrait-loading-poster,\s*\.spatial-portrait\.is-webgl-unavailable \.spatial-portrait-loading-poster\s*\{\s*opacity:\s*1;/,
+    "海报未就绪时必须继续展示可用的首屏近景",
+  );
+  assert.match(
+    styles,
+    /\.spatial-portrait\.is-static \.spatial-portrait-static-poster,\s*\.spatial-portrait\.is-webgl-unavailable \.spatial-portrait-static-poster\s*\{\s*opacity:\s*0;/,
+    "海报未就绪时不得提前露出空白阅读态图片",
+  );
+  assert.match(
+    styles,
+    /\.spatial-page\.is-content-phase\s+\.spatial-portrait\.is-static-poster-ready:not\(\.is-webgl-ready\)\s+\.spatial-portrait-loading-poster\s*\{\s*opacity:\s*0;/,
+    "进入内容阶段后仍须等待静态海报就绪，才能隐藏首屏近景",
+  );
+  assert.match(
+    styles,
+    /\.spatial-page\.is-content-phase\s+\.spatial-portrait\.is-static-poster-ready:not\(\.is-webgl-ready\)\s+\.spatial-portrait-static-poster\s*\{\s*opacity:\s*1;/,
+    "阅读态海报只能在内容阶段、图片就绪且 WebGL 未接管时显示",
+  );
+  assert.doesNotMatch(
+    styles,
+    /\.spatial-page\.is-content-phase\s+\.spatial-portrait-(?:loading|static)-poster\s*\{/,
+    "内容阶段本身不得绕过 readiness gating 直接切图",
+  );
+});
+
+/** 模型加载与 WebGL 恢复无论谁先完成，都必须经同一守卫入口呈现场景。 */
+test("presents the scene once after both model and WebGL are ready", async () => {
+  assert.equal(
+    canPresentSpatialAvatarScene(false, false),
+    false,
+    "上下文先恢复而模型未完成时不得呈现场景",
+  );
+  assert.equal(
+    canPresentSpatialAvatarScene(false, true),
+    false,
+    "模型未完成且上下文丢失时不得呈现场景",
+  );
+  assert.equal(
+    canPresentSpatialAvatarScene(true, true),
+    false,
+    "模型先完成而上下文仍丢失时不得呈现场景",
+  );
+  assert.equal(
+    canPresentSpatialAvatarScene(true, false),
+    true,
+    "只有模型完成且上下文可用时才允许呈现场景",
+  );
+
+  const [bootstrap, scene] = await Promise.all([
+    readFile(
+      new URL("../src/lib/spatial-portrait.ts", import.meta.url),
+      "utf8",
+    ),
+    readFile(
+      new URL("../src/lib/spatial-avatar-scene.ts", import.meta.url),
+      "utf8",
+    ),
+  ]);
+  const presentationMatch = scene.match(
+    /const presentSceneIfReady = \(\): boolean => \{([\s\S]*?)\n  \};/,
+  );
+  assert.ok(presentationMatch, "场景必须提供统一的幂等呈现入口");
+  const presentationBody = presentationMatch[1];
+
+  assert.match(
+    presentationBody,
+    /if \(\s*isDisposed \|\|\s*!canPresentSpatialAvatarScene\(sceneReady, isContextLost\)\s*\) \{\s*return false;\s*\}/,
+    "统一呈现入口必须使用已验证的模型与上下文联合守卫",
+  );
+  assert.match(
+    presentationBody,
+    /renderer\.render\(scene, camera\);\s*if \(!isScenePresented\) \{\s*isScenePresented = true;\s*callbacks\.onReady\(\);\s*\}\s*requestRender\(\);\s*return true;/,
+    "只有成功渲染后才能幂等通知场景已就绪",
+  );
+  assert.equal(
+    (scene.match(/callbacks\.onReady\(\)/g) ?? []).length,
+    1,
+    "onReady 只能由统一呈现入口调用",
+  );
+  assert.doesNotMatch(
+    scene,
+    /root\.classList\.add\("is-webgl-ready"\)/,
+    "场景内部不得绕过 onReady 回调直接标记画布可见",
+  );
+  assert.equal(
+    (bootstrap.match(/root\.classList\.add\("is-webgl-ready"\)/g) ?? [])
+      .length,
+    1,
+    "外层 ready class 也必须只有 onReady 回调这一处写入口",
+  );
+  assert.match(
+    bootstrap,
+    /onReady:\s*\(\): void => \{[\s\S]*?root\.classList\.add\("is-webgl-ready"\);/,
+  );
+
+  assert.match(
+    scene,
+    /"webglcontextlost",\s*\(event\) => \{\s*event\.preventDefault\(\);\s*isContextLost = true;\s*isScenePresented = false;/,
+    "上下文丢失必须撤销本轮已呈现状态，恢复后才能重新通知 ready",
+  );
+  assert.match(
+    scene,
+    /"webglcontextrestored",\s*\(\) => \{[\s\S]*?isContextLost = false;[\s\S]*?scene\.environment = environmentRenderTarget\.texture;\s*resize\(\);\s*presentSceneIfReady\(\);/,
+    "上下文先恢复时必须通过统一入口等待尚未完成的模型",
+  );
+  assert.match(
+    scene,
+    /sceneReady = true;\s*presentSceneIfReady\(\);/,
+    "模型先完成时必须通过统一入口等待尚未恢复的上下文",
+  );
+  assert.equal(
+    (scene.match(/presentSceneIfReady\(\);/g) ?? []).length,
+    2,
+    "只有模型完成和上下文恢复两条路径可以请求呈现场景",
+  );
+  assert.equal(
+    (scene.match(/isScenePresented = false/g) ?? []).length,
+    2,
+    "已呈现状态只能在初始化和上下文丢失时清空",
+  );
+});
+
 /** 空间肖像必须保留同模型海报、动态按需加载和完整资源释放路径。 */
 test("keeps the isolated GLB portrait progressive and accessible", async () => {
   const [
@@ -609,6 +670,7 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
     modelLoader,
     prefetch,
     homePage,
+    avatarPage,
     styles,
     globalStyles,
     heroStyles,
@@ -640,6 +702,7 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
       "utf8",
     ),
     readFile(new URL("../src/pages/index.astro", import.meta.url), "utf8"),
+    readFile(new URL("../src/pages/avatar.astro", import.meta.url), "utf8"),
     readFile(new URL("../src/styles/avatar.css", import.meta.url), "utf8"),
     readFile(new URL("../src/styles/global.css", import.meta.url), "utf8"),
     readFile(new URL("../src/styles/hero.css", import.meta.url), "utf8"),
@@ -719,7 +782,6 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
     builtAvatar,
     /<link rel="preload" href="\/3d\/wenren-avatar-617f0102b1df\.glb"/,
   );
-  assert.match(builtAvatar, /alt="Alice 的三维人物模型/);
   assert.doesNotMatch(builtAvatar, /滚动叙事|移动指针控制目光/);
   assert.match(
     builtAvatar,
@@ -734,7 +796,15 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
       (match) => match[1],
     ),
     ["0", "1", "2", "3"],
-    "四个滚动章节必须与四个故事姿态逐一对应",
+    "独立首屏之后仍必须完整保留四个右栏目录章节",
+  );
+
+  assert.equal((avatarPage.match(/data-spatial-hero/g) ?? []).length, 1);
+  assert.deepEqual(
+    [...avatarPage.matchAll(/data-spatial-chapter="(\d+)"/g)].map(
+      (match) => match[1],
+    ),
+    ["0", "1", "2", "3"],
   );
 
   assert.match(bootstrap, /prefers-reduced-motion: reduce/);
@@ -756,6 +826,12 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
   assert.match(bootstrap, /loadStaticPoster\(\)\.then/);
   assert.match(bootstrap, /staticPosterSource\.srcset/);
   assert.match(bootstrap, /staticPosterImage\.src/);
+  assert.match(bootstrap, /data-spatial-hero/);
+  assert.match(
+    bootstrap,
+    /is-content-phase/,
+    "静态与 WebGL 降级路径必须共享首屏到内容阶段的切换状态",
+  );
 
   assert.match(homePage, /data-astro-prefetch="hover"/);
   assert.match(homePage, /initSpatialAvatarPrefetch\(avatarLink\)/);
@@ -813,36 +889,29 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
   assert.match(scene, /mesh instanceof THREE\.Mesh/);
   assert.match(scene, /mesh\.parent === pivot/);
   assert.match(scene, /mapPointerToGaze/);
-  assert.match(scene, /portraitGroup\.add\(storyPoseGroup\)/);
-  assert.match(scene, /storyPoseGroup\.add\(modelFrame\)/);
+  assert.match(scene, /createPortraitLayoutFrames/);
+  assert.match(scene, /readPortraitLayoutFrame/);
+  assert.match(scene, /readPortraitLayoutProgress/);
+  assert.match(scene, /portraitGroup\.add\(modelFrame\)/);
   assert.match(
     scene,
-    /portraitGroup\.position\.set\(currentModelX, currentModelY, currentModelZ\)/,
-  );
-  assert.match(
-    scene,
-    /storyPoseGroup\.rotation\.set\(currentPitch, currentYaw, currentRoll\)/,
-  );
-  assert.equal(
-    (
-      scene.match(
-        /storyPoseGroup\.rotation\.set\(currentPitch, currentYaw, currentRoll\)/g,
-      ) ?? []
-    ).length,
-    2,
-    "故事层只能在逐帧渲染与模型首帧同步既定滚动姿态",
+    /portraitGroup\.position\.set\(currentModelX, currentModelY, 0\)/,
   );
   assert.doesNotMatch(
     scene,
-    /storyPoseGroup\.(?:rotate[XYZ]|quaternion\.)|storyPoseGroup\.rotation\.(?:x|y|z)\s*=/,
-    "指针事件不得通过其他入口追加故事层旋转",
+    /StoryFrame|createStoryFrames|readStoryFrame|storyPoseGroup/,
+    "新布局不得保留按章节旋转身体的旧故事姿态层",
   );
   assert.doesNotMatch(
     scene,
-    /pointerBodyGroup|currentPointerYaw|currentPointerPitch|bodyPointerYaw|bodyPointerPitch/,
+    /currentModelZ|currentCameraY|currentCameraZ|currentCameraTargetY|currentYaw|currentPitch|currentRoll/,
+    "滚动只允许改变横纵位置与缩放，不得再插值纵深、相机或身体角度",
+  );
+  assert.doesNotMatch(
+    scene,
+    /pointerBodyGroup|currentPointerYaw|currentPointerPitch|bodyPointerYaw|bodyPointerPitch|portraitGroup\.rotation\./,
     "指针只能更新眼球目标，不得建立或驱动模型外层旋转",
   );
-  assert.doesNotMatch(scene, /portraitGroup\.rotation\./);
   assert.match(scene, /pointerClientX = event\.clientX/);
   assert.match(scene, /pointerClientY = event\.clientY/);
   assert.match(scene, /canvas\.getBoundingClientRect\(\)/);
@@ -862,22 +931,20 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
     scene,
     /readPortraitDepthScale\([\s\S]*?camera,[\s\S]*?portraitWorldPosition/,
   );
-  assert.match(scene, /camera\.lookAt\(0, currentCameraTargetY, 0\)/);
-  assert.match(scene, /currentCameraY = THREE\.MathUtils\.lerp/);
-  assert.match(scene, /currentCameraZ = THREE\.MathUtils\.lerp/);
-  assert.match(scene, /currentCameraTargetY = THREE\.MathUtils\.lerp/);
-  assert.match(scene, /const cameraUnsettled =/);
-  assert.match(scene, /Math\.abs\(currentCameraY - storyFrame\.cameraY\)/);
-  assert.match(scene, /Math\.abs\(currentCameraZ - storyFrame\.cameraZ\)/);
   assert.match(
     scene,
-    /Math\.abs\(currentCameraTargetY - storyFrame\.cameraTargetY\)/,
+    /camera\.position\.set\(0, DEFAULT_CAMERA_Y, DEFAULT_CAMERA_Z\)/,
   );
   assert.match(
     scene,
-    /modelUnsettled \|\| cameraUnsettled \|\| bodyUnsettled \|\| eyesUnsettled/,
+    /camera\.lookAt\(0, DEFAULT_CAMERA_TARGET_Y, 0\)/,
   );
-  assert.match(scene, /updateCameraPresentation\(\);/);
+  assert.doesNotMatch(scene, /cameraUnsettled|bodyUnsettled|updateCameraPresentation/);
+  assert.doesNotMatch(
+    scene,
+    /(?:layout|story)Frame\.(?:camera|modelZ|yaw|pitch|roll|gaze)/,
+    "章节布局不得携带相机、纵深、身体角度或默认目光通道",
+  );
   assert.match(
     scene,
     /updateBackdropPresentation\(\);\s*updateProjectedEyeCenter\(\);\s*updatePointerGaze\(\);\s*updateEyeTargets\(\)/,
@@ -918,6 +985,17 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
   assert.match(styles, /@media \(max-width: 800px\)/);
   assert.match(styles, /--spatial-light-shift:\s*0vw/);
   assert.match(styles, /--spatial-light-scale:\s*1/);
+  assert.match(styles, /min-height:\s*500svh/);
+  assert.match(
+    styles,
+    /\.spatial-hero\s*\{[^}]*min-height:\s*100svh/,
+    "独立首屏必须占据完整视口高度",
+  );
+  assert.match(
+    styles,
+    /\.(?:spatial-chapter|spatial-chapter-directory)\s*\{[^}]*justify-content:\s*flex-end/,
+    "桌面端四章内容必须统一放在右栏",
+  );
   assert.match(
     styles,
     /\.spatial-portrait\.is-webgl-ready \.spatial-portrait-canvas/,
@@ -925,7 +1003,11 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
   assert.match(
     styles,
-    /\.spatial-page\.is-spatial-static \.spatial-chapter-build/,
+    /\.spatial-page\.is-content-phase[^{]*\.spatial-portrait-loading-poster/,
+  );
+  assert.match(
+    styles,
+    /\.spatial-page\.is-content-phase[^{]*\.spatial-portrait-static-poster/,
   );
   assert.match(styles, /background:\s*#e8e5db/);
   assert.match(styles, /at 68% 30%/);
@@ -972,14 +1054,8 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
     styles,
     /\.spatial-portrait-static-poster\s*\{[^}]*opacity:\s*0;/,
   );
-  assert.match(
-    styles,
-    /\.spatial-portrait\.is-static \.spatial-portrait-loading-poster/,
-  );
-  assert.match(
-    styles,
-    /\.spatial-portrait\.is-static \.spatial-portrait-static-poster/,
-  );
+  assert.match(styles, /\.spatial-portrait\.is-static/);
+  assert.match(styles, /\.spatial-portrait\.is-webgl-unavailable/);
   assert.match(styles, /\.spatial-portrait-canvas\s*\{[^}]*z-index:\s*2;/);
   assert.match(
     styles,
@@ -993,6 +1069,13 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
     /is-spatial-static \.spatial-portrait-fallback\s*\{[^}]*translateX/,
   );
   assert.doesNotMatch(styles, /spatial-portrait-hint|spatial-pointer-hint/);
+
+  assert.match(builtAvatar, /alt="Alice 的三维人物模型/);
+  assert.equal(
+    (builtAvatar.match(/data-spatial-hero/g) ?? []).length,
+    1,
+    "构建产物必须在四章内容前保留唯一的独立首屏",
+  );
 
   assert.equal(
     createHash("sha256").update(loadingPoster).digest("hex"),
@@ -1287,7 +1370,7 @@ test("keeps the optimized eye rig and textured geometry intact", async (t) => {
     pivot.quaternion.copy(baseQuaternions[eyeIndex]);
   }
 
-  /** 读取瞳孔相对眼球枢轴的屏幕偏移，统一验证各姿态中的局部目光。 */
+  /** 读取瞳孔相对眼球枢轴的屏幕偏移，统一验证两种布局中的局部目光。 */
   const readProjectedEyeOffset = (pupil, pivot, camera) => {
     const pupilPosition = pupil
       .getWorldPosition(new THREE.Vector3())
@@ -1298,61 +1381,110 @@ test("keeps the optimized eye rig and textured geometry intact", async (t) => {
     return pupilPosition.sub(pivotPosition);
   };
 
-  /** 在完整运行时层级和真实透视相机下，指针只转动双眼且不得带动模型。 */
+  /** 投影完整模型的八个包围盒角点，验证近景裁切和阅读态全身构图。 */
+  const readProjectedPortraitBounds = (object, camera) => {
+    const bounds = new THREE.Box3().setFromObject(object);
+    const { min, max } = bounds;
+    const corners = [
+      [min.x, min.y, min.z],
+      [min.x, min.y, max.z],
+      [min.x, max.y, min.z],
+      [min.x, max.y, max.z],
+      [max.x, min.y, min.z],
+      [max.x, min.y, max.z],
+      [max.x, max.y, min.z],
+      [max.x, max.y, max.z],
+    ].map(([x, y, z]) => new THREE.Vector3(x, y, z).project(camera));
+    return {
+      maximumX: Math.max(...corners.map((corner) => corner.x)),
+      maximumY: Math.max(...corners.map((corner) => corner.y)),
+      minimumX: Math.min(...corners.map((corner) => corner.x)),
+      minimumY: Math.min(...corners.map((corner) => corner.y)),
+    };
+  };
+
+  /** 在固定相机与真实透视投影下，首屏和阅读态都只能让指针转动双眼。 */
   const portraitStage = new THREE.Group();
-  const storyPoseGroup = new THREE.Group();
-  storyPoseGroup.add(displayFrame);
-  portraitStage.add(storyPoseGroup);
-  const storyCamera = new THREE.PerspectiveCamera(30, 16 / 9, 0.1, 20);
-  const desktopStoryFrames = createStoryFrames(false);
-  const compactStoryFrames = createStoryFrames(true);
-  const transitionProgresses = [1 / 6, 1 / 2, 5 / 6];
-  const storyPoseCases = [
-    ...desktopStoryFrames
-      .slice(1)
-      .map((pose) => ({ aspect: 16 / 9, pose })),
-    ...transitionProgresses.map((progress) => ({
+  portraitStage.add(displayFrame);
+  const portraitCamera = new THREE.PerspectiveCamera(30, 16 / 9, 0.1, 20);
+  portraitCamera.position.set(0, 0.03, 3.8);
+  portraitCamera.lookAt(0, 0.02, 0);
+  const desktopLayoutFrames = createPortraitLayoutFrames(false);
+  const compactLayoutFrames = createPortraitLayoutFrames(true);
+  const layoutProgresses = [0, 0.5, 1];
+  const layoutCases = [
+    ...layoutProgresses.map((progress) => ({
       aspect: 16 / 9,
-      pose: readStoryFrame(progress, desktopStoryFrames),
+      compact: false,
+      layout: readPortraitLayoutFrame(progress, desktopLayoutFrames),
+      progress,
     })),
-    ...compactStoryFrames
-      .slice(1)
-      .map((pose) => ({ aspect: 390 / 844, pose })),
-    ...transitionProgresses.map((progress) => ({
+    ...layoutProgresses.map((progress) => ({
       aspect: 390 / 844,
-      pose: readStoryFrame(progress, compactStoryFrames),
+      compact: true,
+      layout: readPortraitLayoutFrame(progress, compactLayoutFrames),
+      progress,
     })),
   ];
-  for (const { aspect, pose } of storyPoseCases) {
-    storyCamera.aspect = aspect;
-    storyCamera.updateProjectionMatrix();
-    storyCamera.position.set(0, pose.cameraY, pose.cameraZ);
-    storyCamera.lookAt(0, pose.cameraTargetY, 0);
-    storyCamera.updateWorldMatrix(true, false);
-    portraitStage.position.set(pose.modelX, pose.modelY, pose.modelZ);
-    portraitStage.scale.setScalar(pose.scale);
-    storyPoseGroup.rotation.set(pose.pitch, pose.yaw, pose.roll);
+  for (const { aspect, compact, layout, progress } of layoutCases) {
+    portraitCamera.aspect = aspect;
+    portraitCamera.updateProjectionMatrix();
+    portraitCamera.updateWorldMatrix(true, false);
+    portraitStage.position.set(layout.modelX, layout.modelY, 0);
+    portraitStage.scale.setScalar(layout.scale);
+    eyePairs.forEach(({ pivot }, index) =>
+      pivot.quaternion.copy(baseQuaternions[index]),
+    );
+    portraitStage.updateWorldMatrix(true, true);
+    const projectedBounds = readProjectedPortraitBounds(
+      portraitStage,
+      portraitCamera,
+    );
+    if (progress === 0) {
+      assert.ok(
+        projectedBounds.maximumY - projectedBounds.minimumY > 2,
+        "首屏近景必须放大到裁切模型下半身",
+      );
+    }
+    if (progress === 1) {
+      assert.ok(
+        projectedBounds.minimumY >= -1 && projectedBounds.maximumY <= 1,
+        "阅读态必须在固定相机中完整展示模型",
+      );
+      const projectedCenterX =
+        (projectedBounds.minimumX + projectedBounds.maximumX) / 2;
+      if (compact) {
+        assert.ok(Math.abs(projectedCenterX) < 0.08, "移动端阅读态必须保持居中");
+      } else {
+        assert.ok(projectedCenterX < -0.2, "桌面阅读态必须固定在左半边");
+        assert.ok(projectedBounds.maximumX < 0.1, "模型不得侵入右侧目录区域");
+      }
+    }
     for (const [eyeIndex, { meshes, pivot }] of eyePairs.entries()) {
       eyePairs.forEach(({ pivot: candidate }, index) =>
         candidate.quaternion.copy(baseQuaternions[index]),
       );
       portraitStage.updateWorldMatrix(true, true);
       const pupil = meshes.at(-1);
-      const storyPoseBefore = storyPoseGroup.quaternion.clone();
+      const portraitStageBefore = portraitStage.matrixWorld.clone();
       const modelFrameBefore = displayFrame.matrixWorld.clone();
       const center = pupil
         .getWorldPosition(new THREE.Vector3())
-        .project(storyCamera);
+        .project(portraitCamera);
       const centerOffset = readProjectedEyeOffset(
         pupil,
         pivot,
-        storyCamera,
+        portraitCamera,
       );
       assert.ok(
         Math.abs(center.x) < 1 &&
           Math.abs(center.y) < 1 &&
           Math.abs(center.z) < 1,
-        "故事姿态中的双眼必须保持在可见画面内",
+        `首屏与阅读态中的双眼必须保持在可见画面内：${JSON.stringify({
+          aspect,
+          center: center.toArray(),
+          layout,
+        })}`,
       );
       const targetQuaternion = new THREE.Quaternion();
 
@@ -1366,24 +1498,24 @@ test("keeps the optimized eye rig and textured geometry intact", async (t) => {
       portraitStage.updateWorldMatrix(true, true);
       const right = pupil
         .getWorldPosition(new THREE.Vector3())
-        .project(storyCamera);
+        .project(portraitCamera);
       assert.ok(
         right.x > center.x + 0.00001,
-        "参考姿态中鼠标向右仍必须让瞳孔投影向右",
+        "两种布局中鼠标向右仍必须让瞳孔投影向右",
       );
       const rightOffset = readProjectedEyeOffset(
         pupil,
         pivot,
-        storyCamera,
+        portraitCamera,
       );
       assert.ok(
         rightOffset.x > centerOffset.x + 0.00001,
         "瞳孔相对眼眶必须向右",
       );
-      assert.deepEqual(
-        storyPoseGroup.quaternion.toArray(),
-        storyPoseBefore.toArray(),
-        "鼠标横向移动不得改变故事身体姿态",
+      assertVectorClose(
+        portraitStage.matrixWorld.elements,
+        portraitStageBefore.elements,
+        1e-12,
       );
       assertVectorClose(
         displayFrame.matrixWorld.elements,
@@ -1402,24 +1534,24 @@ test("keeps the optimized eye rig and textured geometry intact", async (t) => {
       portraitStage.updateWorldMatrix(true, true);
       const down = pupil
         .getWorldPosition(new THREE.Vector3())
-        .project(storyCamera);
+        .project(portraitCamera);
       assert.ok(
         down.y < center.y - 0.00001,
-        "参考姿态中鼠标向下仍必须让瞳孔投影向下",
+        "两种布局中鼠标向下仍必须让瞳孔投影向下",
       );
       const downOffset = readProjectedEyeOffset(
         pupil,
         pivot,
-        storyCamera,
+        portraitCamera,
       );
       assert.ok(
         downOffset.y < centerOffset.y - 0.00001,
         "瞳孔相对眼眶必须向下",
       );
-      assert.deepEqual(
-        storyPoseGroup.quaternion.toArray(),
-        storyPoseBefore.toArray(),
-        "鼠标纵向移动不得改变故事身体姿态",
+      assertVectorClose(
+        portraitStage.matrixWorld.elements,
+        portraitStageBefore.elements,
+        1e-12,
       );
       assertVectorClose(
         displayFrame.matrixWorld.elements,
@@ -1433,7 +1565,6 @@ test("keeps the optimized eye rig and textured geometry intact", async (t) => {
   );
   portraitStage.position.set(0, 0, 0);
   portraitStage.scale.setScalar(1);
-  storyPoseGroup.rotation.set(0, 0, 0);
   portraitStage.updateWorldMatrix(true, true);
 
   const localVertices = eyePairs.map(({ meshes }) =>

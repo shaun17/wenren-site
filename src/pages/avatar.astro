@@ -29,22 +29,26 @@ const portraitDescription = `${siteConfig.brand.name} 的交互式空间肖像�
       <SpatialPortrait name={siteConfig.brand.name} />
     </div>
 
+    <div class="spatial-hero" data-spatial-hero aria-hidden="true">
+      <p class="spatial-hero-marker">01 / ABOUT</p>
+      <p class="spatial-scroll-cue">
+        SCROLL TO EXPLORE
+        <span>↓</span>
+      </p>
+    </div>
+
     <div class="spatial-story" aria-label={`${siteConfig.brand.name} 个人介绍`}>
-      <section class="spatial-chapter spatial-chapter-intro" data-spatial-chapter="0">
-        <div class="spatial-copy spatial-copy-intro">
+      <section class="spatial-chapter spatial-chapter-directory" data-spatial-chapter="0">
+        <div class="spatial-copy">
           <p class="spatial-eyebrow">01 / ABOUT</p>
           <h1>About {siteConfig.brand.name}</h1>
           <div class="spatial-summary">
             {siteConfig.home.biography.map((paragraph) => <p>{paragraph}</p>)}
           </div>
         </div>
-        <p class="spatial-scroll-cue" aria-hidden="true">
-          SCROLL TO EXPLORE
-          <span>↓</span>
-        </p>
       </section>
 
-      <section class="spatial-chapter spatial-chapter-build" data-spatial-chapter="1">
+      <section class="spatial-chapter spatial-chapter-directory" data-spatial-chapter="1">
         <div class="spatial-copy">
           <p class="spatial-eyebrow">02 / RÉSUMÉ</p>
           <h2>Résumé</h2>
@@ -56,7 +60,7 @@ const portraitDescription = `${siteConfig.brand.name} 的交互式空间肖像�
         </div>
       </section>
 
-      <section class="spatial-chapter spatial-chapter-detail" data-spatial-chapter="2">
+      <section class="spatial-chapter spatial-chapter-directory" data-spatial-chapter="2">
         <div class="spatial-copy">
           <p class="spatial-eyebrow">03 / INDEPENDENT</p>
           <h2>独立开发</h2>
@@ -64,7 +68,7 @@ const portraitDescription = `${siteConfig.brand.name} 的交互式空间肖像�
         </div>
       </section>
 
-      <section class="spatial-chapter spatial-chapter-record" data-spatial-chapter="3">
+      <section class="spatial-chapter spatial-chapter-directory" data-spatial-chapter="3">
         <div class="spatial-copy">
           <p class="spatial-eyebrow">04 / NOTES</p>
           <h2>持续记录</h2>

@@ -14,14 +14,6 @@ const { name } = Astro.props;
     data-spatial-loading-poster
   >
     <source
-      media="(prefers-reduced-motion: reduce) and (max-width: 800px)"
-      srcset={spatialAvatarAssets.staticPosterMobile}
-    />
-    <source
-      media="(prefers-reduced-motion: reduce)"
-      srcset={spatialAvatarAssets.staticPoster}
-    />
-    <source
       media="(max-width: 800px)"
       srcset={spatialAvatarAssets.loadingPosterMobile}
     />
