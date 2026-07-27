@@ -1,0 +1,80 @@
+---
+import SpatialPortrait from "../components/SpatialPortrait.astro";
+import { CATEGORY_DEFINITIONS } from "../content/categories";
+import { siteConfig } from "../config/runtime-site-config";
+import SiteLayout from "../layouts/SiteLayout.astro";
+import "../styles/avatar.css";
+
+const career = CATEGORY_DEFINITIONS.career;
+const works = CATEGORY_DEFINITIONS.works;
+const writing = CATEGORY_DEFINITIONS.writing;
+const journal = CATEGORY_DEFINITIONS.journal;
+const portraitDescription = `${siteConfig.brand.name} 的交互式空间肖像与个人介绍。`;
+---
+
+<SiteLayout title="3D 形象" description={portraitDescription}>
+  <main class="spatial-page is-spatial-static" data-spatial-page>
+    <header class="spatial-header">
+      <a class="spatial-brand" href="/" aria-label="返回首页">
+        <span>{siteConfig.brand.name}</span>
+        <span>SPATIAL RÉSUMÉ</span>
+      </a>
+      <a class="spatial-home-link" href="/">
+        首页
+        <span class="spatial-home-link-arrow" aria-hidden="true">→</span>
+      </a>
+    </header>
+
+    <div class="spatial-stage" aria-hidden="false">
+      <SpatialPortrait name={siteConfig.brand.name} />
+    </div>
+
+    <div class="spatial-story" aria-label={`${siteConfig.brand.name} 个人介绍`}>
+      <section class="spatial-chapter spatial-chapter-intro" data-spatial-chapter="0">
+        <div class="spatial-copy spatial-copy-intro">
+          <p class="spatial-eyebrow">01 / ABOUT</p>
+          <h1>About {siteConfig.brand.name}</h1>
+          <div class="spatial-summary">
+            {siteConfig.home.biography.map((paragraph) => <p>{paragraph}</p>)}
+          </div>
+        </div>
+        <p class="spatial-scroll-cue" aria-hidden="true">
+          SCROLL TO EXPLORE
+          <span>↓</span>
+        </p>
+      </section>
+
+      <section class="spatial-chapter spatial-chapter-build" data-spatial-chapter="1">
+        <div class="spatial-copy">
+          <p class="spatial-eyebrow">02 / RÉSUMÉ</p>
+          <h2>Résumé</h2>
+          <p>从需求、设计、开发到发布，记录每一个真正落地的过程。</p>
+          <nav class="spatial-links" aria-label="作品与经历">
+            <a href={works.path}>{works.label}<span aria-hidden="true">↗</span></a>
+            <a href={career.path}>{career.label}<span aria-hidden="true">↗</span></a>
+          </nav>
+        </div>
+      </section>
+
+      <section class="spatial-chapter spatial-chapter-detail" data-spatial-chapter="2">
+        <div class="spatial-copy">
+          <p class="spatial-eyebrow">03 / INDEPENDENT</p>
+          <h2>独立开发</h2>
+          <p>把真实问题变成可用的产品，也持续校准设计、技术与生活之间的尺度。</p>
+        </div>
+      </section>
+
+      <section class="spatial-chapter spatial-chapter-record" data-spatial-chapter="3">
+        <div class="spatial-copy">
+          <p class="spatial-eyebrow">04 / NOTES</p>
+          <h2>持续记录</h2>
+          <p>持续写下实践中的判断，也保留那些不必成为结论的片段。</p>
+          <nav class="spatial-links" aria-label="文稿与流水账">
+            <a href={writing.path}>{writing.label}<span aria-hidden="true">↗</span></a>
+            <a href={journal.path}>{journal.label}<span aria-hidden="true">↗</span></a>
+          </nav>
+        </div>
+      </section>
+    </div>
+  </main>
+</SiteLayout>

@@ -6,6 +6,12 @@ import { siteConfig } from "../src/config/site-config.mjs";
 
 const projectRoot = new URL("../", import.meta.url);
 const buildRoot = new URL("../dist/", import.meta.url);
+const publicAvatarRoot = new URL("../public/3d/", import.meta.url);
+const expectedAvatarAssets = [
+  "wenren-avatar-617f0102b1df.glb",
+  "wenren-avatar-poster-bb691bbe0b43.jpg",
+  "wenren-avatar-poster-mobile-6b514bf2f2f4.jpg",
+];
 const expectedArticleRoutes = [
   "/career/northstar-studio/",
   "/career/beacon-labs/",
@@ -102,7 +108,22 @@ test("builds the four-column homepage with a single journal entry point", async 
   );
   assert.ok(html.includes(`<link rel="canonical" href="${siteConfig.origin}/">`));
   assert.ok(html.includes(escapeHtmlText(siteConfig.brand.kicker)));
-  assert.ok(html.includes(escapeHtmlText(siteConfig.home.headline.prefix)));
+  const heroTitle = html.match(/<h1 id="hero-title">([\s\S]*?)<\/h1>/)?.[1] ?? "";
+  const heroText = heroTitle.replace(/<[^>]+>/g, "");
+  assert.equal(
+    heroText,
+    `${siteConfig.home.headline.prefix}${siteConfig.home.headline.linkLabel}${siteConfig.home.headline.suffix}`,
+  );
+  const avatarAnchor = findAnchor(heroTitle, "/avatar/");
+  assert.ok(avatarAnchor, "首页品牌标题应链接到空间肖像页");
+  assert.match(avatarAnchor, /class="hero-avatar-link animated-underline"/);
+  assert.match(
+    avatarAnchor,
+    new RegExp(`aria-label="查看 ${escapeHtmlText(siteConfig.brand.name)} 的 3D 形象"`),
+  );
+  assert.doesNotMatch(avatarAnchor, /target=/);
+  assert.doesNotMatch(html, /data-spatial-portrait|data-avatar-hero/);
+  assert.doesNotMatch(html, /\/3d\/wenren-avatar-/);
   assert.match(html, /<section class="home-information" aria-label="个人信息">/);
   assert.doesNotMatch(html, /class="hero-details"/);
   for (const paragraph of siteConfig.home.biography) {
@@ -180,6 +201,50 @@ test("builds the four-column homepage with a single journal entry point", async 
   assert.equal(
     findStructuredDataNode(structuredData, "ProfilePage").mainEntity["@id"],
     `${siteConfig.origin}/#person`,
+  );
+});
+
+/** 3D 体验只存在于独立二级页，并直接使用已确认的 GLB 与同模型海报。 */
+test("builds the isolated spatial portrait page without changing the homepage", async () => {
+  await Promise.all([
+    access(new URL("avatar/index.html", buildRoot)),
+    access(new URL("3d/wenren-avatar-617f0102b1df.glb", buildRoot)),
+    access(new URL("3d/wenren-avatar-poster-bb691bbe0b43.jpg", buildRoot)),
+    access(
+      new URL(
+        "3d/wenren-avatar-poster-mobile-6b514bf2f2f4.jpg",
+        buildRoot,
+      ),
+    ),
+  ]);
+  const [publicAvatarAssets, builtAvatarAssets] = await Promise.all([
+    readdir(publicAvatarRoot),
+    readdir(new URL("3d/", buildRoot)),
+  ]);
+  assert.deepEqual(publicAvatarAssets.sort(), expectedAvatarAssets);
+  assert.deepEqual(builtAvatarAssets.sort(), expectedAvatarAssets);
+  const html = await readRoute("avatar/index.html");
+
+  assert.equal(extractDocumentTitle(html), `3D 形象 — ${siteConfig.brand.name}`);
+  assert.ok(html.includes(`<link rel="canonical" href="${siteConfig.origin}/avatar/">`));
+  assert.match(html, /<main class="spatial-page is-spatial-static" data-spatial-page>/);
+  assert.match(html, /<figure class="spatial-portrait" data-spatial-portrait>/);
+  assert.match(html, /<picture class="spatial-portrait-fallback">/);
+  assert.match(html, /src="\/3d\/wenren-avatar-poster-bb691bbe0b43\.jpg"/);
+  assert.match(
+    html,
+    /srcset="\/3d\/wenren-avatar-poster-mobile-6b514bf2f2f4\.jpg"/,
+  );
+  assert.match(html, /data-spatial-canvas/);
+  assert.equal((html.match(/data-spatial-chapter=/g) ?? []).length, 4);
+  assert.ok(findAnchor(html, "/"));
+  for (const href of ["/career/", "/works/", "/writing/", "/journal/"]) {
+    assert.ok(findAnchor(html, href), `空间肖像页应保留站内入口：${href}`);
+  }
+  assert.doesNotMatch(html, /data-avatar-view|拖动旋转/);
+  assert.doesNotMatch(
+    removeStructuredDataScripts(html),
+    /<script(?![^>]*\bsrc=)[^>]*>[\s\S]*?<\/script>/i,
   );
 });
 
@@ -523,6 +588,7 @@ test("builds sitemap and robots discovery files from published content", async (
   assert.match(sitemap, /<urlset xmlns="http:\/\/www\.sitemaps\.org\/schemas\/sitemap\/0\.9">/);
   for (const route of [
     "/",
+    "/avatar/",
     "/career/",
     "/works/",
     "/writing/",
@@ -552,13 +618,20 @@ test("keeps generated files static and credential-free", async () => {
   const contents = await Promise.all(
     readableNames.map((name) => readFile(new URL(name, buildRoot), "utf8")),
   );
+  const htmlContents = await Promise.all(
+    names
+      .filter((name) => /\.html$/i.test(name))
+      .map((name) => readFile(new URL(name, buildRoot), "utf8")),
+  );
   const output = contents.join("\n");
 
   assert.doesNotMatch(output, /NOTION_TOKEN|Bearer\s+secret_/i);
   assert.doesNotMatch(output, /X-Amz-(?:Algorithm|Credential|Signature)/i);
   assert.doesNotMatch(output, /secure\.notion-static\.com|notionusercontent\.com/i);
   assert.doesNotMatch(output, /https:\/\/[^/"']+\.notion\.site\//i);
-  assert.doesNotMatch(output, /_next|codex-preview|react-loading-skeleton/i);
+  assert.doesNotMatch(output, /codex-preview|react-loading-skeleton/i);
+  // Three.js 内部允许使用 `_next` 变量；这里只禁止页面重新依赖 Next.js 静态资源。
+  assert.doesNotMatch(htmlContents.join("\n"), /(?:href|src)="[^"]*\/_next\//i);
 });
 
 /** Cloudflare Pages 配置、缓存响应头和本地字体随构建一起交付。 */
@@ -585,10 +658,21 @@ test("keeps Cloudflare Pages Direct Upload configuration deployable", async () =
   assert.match(license, /^MIT License/);
   assert.match(headers, /X-Content-Type-Options: nosniff/);
   assert.match(headers, /X-Frame-Options: DENY/);
-  assert.match(headers, /script-src 'self' https:\/\/static\.cloudflareinsights\.com/);
-  assert.match(headers, /connect-src 'self' https:\/\/cloudflareinsights\.com/);
+  assert.match(
+    headers,
+    /script-src 'self' 'wasm-unsafe-eval' https:\/\/static\.cloudflareinsights\.com/,
+  );
+  assert.match(
+    headers,
+    /connect-src [^;\n]*'self'[^;\n]*blob:[^;\n]*https:\/\/cloudflareinsights\.com/,
+  );
+  assert.match(headers, /img-src [^;\n]*'self'[^;\n]*data:[^;\n]*blob:/);
   assert.match(headers, /Cache-Control: public, max-age=31536000, immutable/);
   assert.match(headers, /\/_astro\/\*/);
+  assert.match(
+    headers,
+    /\/3d\/\*\s+Cache-Control: public, max-age=31536000, immutable/,
+  );
   assert.match(headers, /\/notion-assets\/\*/);
   assert.match(css, /grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
   assert.match(css, /grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);

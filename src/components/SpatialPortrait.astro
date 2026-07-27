@@ -1,0 +1,42 @@
+---
+interface Props {
+  name: string;
+}
+
+const { name } = Astro.props;
+---
+
+<figure class="spatial-portrait" data-spatial-portrait>
+  <picture class="spatial-portrait-fallback">
+    <source
+      media="(max-width: 800px)"
+      srcset="/3d/wenren-avatar-poster-mobile-6b514bf2f2f4.jpg"
+    />
+    <img
+      class="spatial-portrait-fallback-image"
+      src="/3d/wenren-avatar-poster-bb691bbe0b43.jpg"
+      width="1280"
+      height="720"
+      alt={`${name} 的三维人物模型：短发，穿灰色圆领上衣`}
+      loading="eager"
+      decoding="async"
+      fetchpriority="high"
+    />
+  </picture>
+  <canvas class="spatial-portrait-canvas" aria-hidden="true" data-spatial-canvas></canvas>
+  <p class="spatial-portrait-status" role="status" aria-live="polite" data-spatial-status>
+    当前展示三维模型静态海报。
+  </p>
+</figure>
+
+<script>
+  import { initSpatialPortrait } from "../lib/spatial-portrait";
+
+  /** 初始化当前页面唯一的空间肖像，并把资源释放交给场景自身管理。 */
+  const initializeSpatialPortrait = (): void => {
+    const portrait = document.querySelector<HTMLElement>("[data-spatial-portrait]");
+    if (portrait) initSpatialPortrait(portrait);
+  };
+
+  initializeSpatialPortrait();
+</script>

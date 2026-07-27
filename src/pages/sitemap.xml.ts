@@ -52,6 +52,10 @@ export const GET: APIRoute = async () => {
       loc: createCanonicalUrl("/"),
       lastmod: getLatestUpdatedAt(allContent),
     },
+    {
+      loc: createCanonicalUrl("/avatar/"),
+      lastmod: null,
+    },
     ...ORDERED_CATEGORIES.map((category) => {
       const categoryContent =
         category.key === "journal"

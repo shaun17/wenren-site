@@ -47,14 +47,41 @@
 
 .hero h1 a {
   display: inline-block;
+}
+
+.hero h1 .hero-headline-link {
   margin-left: 0.12em;
+}
+
+/* 左上箭头把品牌标题标成空间肖像入口，同时保留原有下划线反馈。 */
+.hero-avatar-link::before {
+  position: absolute;
+  top: 0.05em;
+  left: -1.05em;
+  font-family: var(--font-mono);
+  font-size: clamp(0.7rem, 1.35vw, 1.2rem);
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1;
+  content: "↖";
+  opacity: 0.72;
+  pointer-events: none;
+  transition:
+    opacity 180ms ease,
+    transform 220ms ease;
+}
+
+.hero-avatar-link:hover::before,
+.hero-avatar-link:focus-visible::before {
+  opacity: 1;
+  transform: translate(-0.12em, -0.12em);
 }
 
 /* 年份、简介、目录和联系方式共享同一条左侧起始轴。 */
 .home-information {
   padding: min(2vw, 1.8rem) var(--home-gutter) 0;
   font-family: var(--font-mono);
-  font-size: clamp(0.75rem, 1.111vw, 1rem);
+  font-size: var(--information-font-size);
   letter-spacing: 0.05em;
   animation: content-reveal 1.2s 400ms linear both;
 }

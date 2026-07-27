@@ -12,6 +12,21 @@ const headlineCategory = ORDERED_CATEGORIES.find(
   (category) => category.key === siteConfig.home.headline.categoryKey,
 );
 if (!headlineCategory) throw new Error("首页标题指向了不存在的分类");
+
+// 首页标题以品牌名开头；拆出原始大小写标签后，让它成为空间肖像页的稳定入口。
+const headlineBrandLabel = siteConfig.home.headline.prefix.slice(
+  0,
+  siteConfig.brand.name.length,
+);
+if (
+  headlineBrandLabel.toLocaleLowerCase(siteConfig.locale) !==
+  siteConfig.brand.name.toLocaleLowerCase(siteConfig.locale)
+) {
+  throw new Error("首页标题必须以品牌名开头");
+}
+const headlinePrefixTail = siteConfig.home.headline.prefix.slice(
+  headlineBrandLabel.length,
+);
 ---
 
 <SiteLayout>
@@ -19,7 +34,7 @@ if (!headlineCategory) throw new Error("首页标题指向了不存在的分类"
     <section class="hero" aria-labelledby="hero-title">
       <p class="hero-kicker">{siteConfig.brand.kicker}</p>
 
-      <h1 id="hero-title">{siteConfig.home.headline.prefix}<a class="animated-underline" href={headlineCategory.path}>{siteConfig.home.headline.linkLabel}</a>{siteConfig.home.headline.suffix}</h1>
+      <h1 id="hero-title"><a class="hero-avatar-link animated-underline" href="/avatar/" aria-label={`查看 ${siteConfig.brand.name} 的 3D 形象`}>{headlineBrandLabel}</a>{headlinePrefixTail}<a class="hero-headline-link animated-underline" href={headlineCategory.path}>{siteConfig.home.headline.linkLabel}</a>{siteConfig.home.headline.suffix}</h1>
     </section>
 
     <section class="home-information" aria-label="个人信息">
