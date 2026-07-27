@@ -10,13 +10,11 @@ import "../styles/avatar.css";
 const career = CATEGORY_DEFINITIONS.career;
 const works = CATEGORY_DEFINITIONS.works;
 const writing = CATEGORY_DEFINITIONS.writing;
-const journal = CATEGORY_DEFINITIONS.journal;
 const entries = await getSiteContent();
 // 首页与空间形象页把同一份有序内容交给共享组件，由组件统一截取前四篇。
 const careerEntries = entries.filter((entry) => entry.category === career.key);
 const worksEntries = entries.filter((entry) => entry.category === works.key);
 const writingEntries = entries.filter((entry) => entry.category === writing.key);
-const journalEntries = entries.filter((entry) => entry.category === journal.key);
 const portraitDescription = `${siteConfig.brand.name} 的交互式空间肖像与个人介绍。`;
 ---
 
@@ -83,11 +81,11 @@ const portraitDescription = `${siteConfig.brand.name} 的交互式空间肖像�
           class="spatial-chapter spatial-chapter-directory"
           data-spatial-chapter="2"
           data-spatial-snap-anchor
-          aria-labelledby="spatial-independent-title"
+          aria-labelledby="spatial-works-title"
         >
           <div class="spatial-copy">
             <p class="spatial-eyebrow">03 / INDEPENDENT</p>
-            <h2 id="spatial-independent-title">独立开发</h2>
+            <h2 id="spatial-works-title">个人作品</h2>
             <p>把真实问题变成可用的产品，也持续校准设计、技术与生活之间的尺度。</p>
             <nav class="spatial-directory-groups" aria-label="个人作品目录">
               <DirectoryColumn
@@ -103,24 +101,16 @@ const portraitDescription = `${siteConfig.brand.name} 的交互式空间肖像�
           class="spatial-chapter spatial-chapter-directory"
           data-spatial-chapter="3"
           data-spatial-snap-anchor
-          aria-labelledby="spatial-notes-title"
+          aria-labelledby="spatial-post-title"
         >
-          <div class="spatial-copy spatial-copy-wide">
+          <div class="spatial-copy">
             <p class="spatial-eyebrow">04 / NOTES</p>
-            <h2 id="spatial-notes-title">持续记录</h2>
+            <h2 id="spatial-post-title">Post</h2>
             <p>持续写下实践中的判断，也保留那些不必成为结论的片段。</p>
-            <nav
-              class="spatial-directory-groups spatial-directory-groups-multiple"
-              aria-label="文稿与流水账目录"
-            >
+            <nav class="spatial-directory-groups" aria-label="文稿目录">
               <DirectoryColumn
                 category={writing}
                 entries={writingEntries}
-                headingLevel="h3"
-              />
-              <DirectoryColumn
-                category={journal}
-                entries={journalEntries}
                 headingLevel="h3"
               />
             </nav>

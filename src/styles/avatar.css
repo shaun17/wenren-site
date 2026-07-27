@@ -482,10 +482,6 @@
   margin-top: 0.35rem;
 }
 
-.spatial-copy-wide {
-  width: min(43vw, 38rem);
-}
-
 /* 空间页复用首页目录组件，只改变容器密度与浅色场景中的局部色值。 */
 .spatial-directory-groups {
   --line: var(--spatial-line);
@@ -497,11 +493,6 @@
   letter-spacing: 0.06em;
 }
 
-.spatial-directory-groups-multiple {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: clamp(1rem, 2vw, 1.75rem);
-}
-
 .spatial-directory-groups .directory-column,
 .spatial-directory-groups .directory-column:last-child,
 .spatial-directory-groups .directory-column + .directory-column {
@@ -509,18 +500,18 @@
   border: 0;
 }
 
-.spatial-directory-groups .column-index {
-  display: none;
-}
-
+/* 二级分类标题不参与视觉层级，但仍保留给目录 section 的无障碍命名。 */
 .spatial-directory-groups .column-heading {
-  margin-bottom: 0.65rem;
-}
-
-.spatial-directory-groups .column-heading h3 {
-  font-size: var(--information-font-size);
-  font-weight: 500;
-  letter-spacing: 0.06em;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  border: 0;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .spatial-directory-groups .directory-links {
@@ -680,10 +671,6 @@
     backdrop-filter: blur(14px);
   }
 
-  .spatial-copy-wide {
-    width: 100%;
-  }
-
   .spatial-copy-intro {
     padding: 0;
     border: 0;
@@ -717,16 +704,6 @@
     margin-top: 1rem;
     font-size: clamp(0.68rem, 2.8vw, 0.78rem);
     letter-spacing: 0.025em;
-  }
-
-  .spatial-directory-groups-multiple {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.75rem;
-  }
-
-  .spatial-directory-groups .column-heading h3 {
-    font-size: inherit;
-    letter-spacing: inherit;
   }
 
   .spatial-directory-groups .directory-links {

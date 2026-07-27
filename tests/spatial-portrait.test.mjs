@@ -719,7 +719,7 @@ test("guards spatial avatar prefetch for motion and constrained networks", () =>
   }
 });
 
-/** 空间形象页复用首页目录时，必须保留浅色层级、标题语义与三组响应式布局。 */
+/** 空间形象页只展示三组内容链接，二级分类标题保留语义但不参与视觉层级。 */
 test("adapts the shared directory component to the spatial reading column", async () => {
   const [page, styles] = await Promise.all([
     readFile(new URL("../src/pages/avatar.astro", import.meta.url), "utf8"),
@@ -727,14 +727,15 @@ test("adapts the shared directory component to the spatial reading column", asyn
   ]);
 
   assert.match(page, /import DirectoryColumn from "\.\.\/components\/DirectoryColumn\.astro"/);
-  assert.equal((page.match(/<DirectoryColumn/g) ?? []).length, 4);
-  assert.equal((page.match(/headingLevel="h3"/g) ?? []).length, 4);
+  assert.equal((page.match(/<DirectoryColumn/g) ?? []).length, 3);
+  assert.equal((page.match(/headingLevel="h3"/g) ?? []).length, 3);
   assert.match(page, /class="spatial-directory-groups" aria-label="职业经历目录"/);
   assert.match(page, /class="spatial-directory-groups" aria-label="个人作品目录"/);
-  assert.match(
-    page,
-    /class="spatial-directory-groups spatial-directory-groups-multiple"\s+aria-label="文稿与流水账目录"/,
-  );
+  assert.match(page, /class="spatial-directory-groups" aria-label="文稿目录"/);
+  assert.match(page, /<h2 id="spatial-works-title">个人作品<\/h2>/);
+  assert.match(page, /<h2 id="spatial-post-title">Post<\/h2>/);
+  assert.doesNotMatch(page, /CATEGORY_DEFINITIONS\.journal|journalEntries/);
+  assert.doesNotMatch(page, /spatial-copy-wide|spatial-directory-groups-multiple/);
   assert.doesNotMatch(page, /class="spatial-links"/);
 
   const directoryRule = styles.match(
@@ -743,8 +744,24 @@ test("adapts the shared directory component to the spatial reading column", asyn
   assert.ok(directoryRule);
   assert.match(directoryRule, /--line:\s*var\(--spatial-line\)/);
   assert.match(directoryRule, /--text-muted:\s*var\(--spatial-muted\)/);
-  assert.match(styles, /\.spatial-directory-groups-multiple\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/s);
-  assert.match(styles, /\.spatial-directory-groups \.column-heading h3\s*\{[^}]*font-size:/s);
+  const hiddenHeadingRule = styles.match(
+    /\.spatial-directory-groups \.column-heading\s*\{([\s\S]*?)\n\}/,
+  )?.[1];
+  assert.ok(hiddenHeadingRule, "头像页必须只在视觉上隐藏二级分类标题");
+  for (const declaration of [
+    /position:\s*absolute;/,
+    /width:\s*1px;/,
+    /height:\s*1px;/,
+    /margin:\s*-1px;/,
+    /overflow:\s*hidden;/,
+    /clip:\s*rect\(0, 0, 0, 0\);/,
+    /clip-path:\s*inset\(50%\);/,
+    /white-space:\s*nowrap;/,
+  ]) {
+    assert.match(hiddenHeadingRule, declaration);
+  }
+  assert.doesNotMatch(hiddenHeadingRule, /display:\s*none|visibility:\s*hidden/);
+  assert.doesNotMatch(styles, /\.spatial-directory-groups-multiple|\.spatial-copy-wide/);
   assert.match(styles, /\.spatial-directory-groups \.directory-links\s*\{[^}]*grid-template-rows:\s*repeat\(5, minmax\(2\.25rem, auto\)\);/s);
   assert.match(styles, /\.spatial-directory-groups \.directory-links a::after\s*\{\s*content:\s*none;/);
   assert.doesNotMatch(styles, /\.spatial-links/);

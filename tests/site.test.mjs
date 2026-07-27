@@ -411,7 +411,7 @@ test("builds the isolated spatial portrait page without changing the homepage", 
       html.indexOf('data-spatial-chapter="1"'),
     "默认首屏 About 后必须直接进入 Résumé",
   );
-  assert.equal((html.match(/data-directory-category=/g) ?? []).length, 4);
+  assert.equal((html.match(/data-directory-category=/g) ?? []).length, 3);
   assert.equal((html.match(/class="spatial-directory-groups(?: |")/g) ?? []).length, 3);
   const directorySurface = html.match(
     /<div class="spatial-directory-story" data-spatial-directory-surface>([\s\S]*?)<\/div><\/div><\/main>/,
@@ -427,34 +427,39 @@ test("builds the isolated spatial portrait page without changing the homepage", 
     [...html.matchAll(/data-directory-category="([^"]+)"/g)].map(
       (match) => match[1],
     ),
-    ["career", "works", "writing", "journal"],
-    "空间形象页的目录顺序必须与首页一致",
+    ["career", "works", "writing"],
+    "空间形象页只保留经历、作品与文稿目录",
   );
   assert.deepEqual(extractSpatialChapterCategories(html, 1), ["career"]);
   assert.deepEqual(extractSpatialChapterCategories(html, 2), ["works"]);
-  assert.deepEqual(extractSpatialChapterCategories(html, 3), [
-    "writing",
-    "journal",
-  ]);
+  assert.deepEqual(extractSpatialChapterCategories(html, 3), ["writing"]);
   assert.match(html, /aria-labelledby="spatial-resume-title"/);
-  assert.match(html, /aria-labelledby="spatial-independent-title"/);
-  assert.match(html, /aria-labelledby="spatial-notes-title"/);
+  assert.match(html, /aria-labelledby="spatial-works-title"/);
+  assert.match(html, /<h2 id="spatial-works-title">个人作品<\/h2>/);
+  assert.match(html, /aria-labelledby="spatial-post-title"/);
+  assert.match(html, /<h2 id="spatial-post-title">Post<\/h2>/);
+  assert.doesNotMatch(html, />独立开发<|>持续记录</);
   assert.doesNotMatch(html, /class="spatial-links"/);
-  for (const category of siteConfig.categories) {
+  for (const category of siteConfig.categories.filter(
+    ({ key }) => key !== "journal",
+  )) {
     const column = extractDirectoryColumn(html, category.key);
     const heading = column.match(/<h3[^>]*>[\s\S]*?<\/h3>/)?.[0] ?? "";
     assert.ok(column, `空间形象页应渲染 ${category.key} 目录`);
     assert.doesNotMatch(heading, /<a\b/);
+    assert.doesNotMatch(heading, /\bhidden\b|aria-hidden=/);
     assert.deepEqual(
       extractDirectorySnapshot(html, category.key),
       extractDirectorySnapshot(homepage, category.key),
       `空间形象页的 ${category.key} 目录必须与首页底部一致`,
     );
   }
+  assert.equal(extractDirectoryColumn(html, "journal"), "");
   assert.ok(findAnchor(html, "/"));
-  for (const href of ["/career/", "/works/", "/writing/", "/journal/"]) {
+  for (const href of ["/career/", "/works/", "/writing/"]) {
     assert.ok(findAnchor(html, href), `空间肖像页应保留站内入口：${href}`);
   }
+  assert.equal(findAnchor(html, "/journal/"), undefined);
   assert.doesNotMatch(html, /data-avatar-view|拖动旋转/);
   assert.doesNotMatch(
     removeStructuredDataScripts(html),
