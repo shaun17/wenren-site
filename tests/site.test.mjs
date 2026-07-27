@@ -14,7 +14,7 @@ const expectedAvatarAssets = [
   "wenren-avatar-poster-8a79a7b0a61d.jpg",
   "wenren-avatar-poster-mobile-49a408e5118b.jpg",
 ];
-const expectedArticleRoutes = [
+const expectedDirectoryArticleRoutes = [
   "/career/northstar-studio/",
   "/career/beacon-labs/",
   "/works/atlas-notes/",
@@ -22,6 +22,10 @@ const expectedArticleRoutes = [
   "/works/pocket-gallery/",
   "/works/shared-link/",
   "/writing/writing-with-notion/",
+];
+const expectedArticleRoutes = [
+  ...expectedDirectoryArticleRoutes,
+  "/works/release-tracker/",
 ];
 
 /** 读取某个静态路由的最终 HTML，而不是只验证 Astro 源码。 */
@@ -200,7 +204,7 @@ test("builds consistent four-column directory previews on the homepage", async (
   assert.ok(findAnchor(html, "/writing/"));
   assert.ok(findAnchor(html, "/journal/"));
 
-  for (const href of expectedArticleRoutes) {
+  for (const href of expectedDirectoryArticleRoutes) {
     const anchor = findAnchor(html, href);
     assert.ok(anchor, `首页应指向站内静态详情页：${href}`);
     assert.doesNotMatch(anchor, /target=/);
@@ -234,6 +238,11 @@ test("builds consistent four-column directory previews on the homepage", async (
       "/works/pocket-gallery/",
       "/works/shared-link/",
     ],
+  );
+  assert.equal(
+    findAnchor(worksColumn, "/works/release-tracker/"),
+    undefined,
+    "第五篇作品必须留在分类页，不能进入首页四篇预览",
   );
 
   const journalColumn = extractDirectoryColumn(html, "journal");
