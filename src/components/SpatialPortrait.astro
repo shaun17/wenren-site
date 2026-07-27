@@ -51,13 +51,18 @@ const { name } = Astro.props;
   </picture>
   <canvas class="spatial-portrait-canvas" aria-hidden="true" data-spatial-canvas></canvas>
   <noscript>
-    <img
-      class="spatial-portrait-noscript-poster"
-      src={spatialAvatarAssets.staticPoster}
-      width="1280"
-      height="720"
-      alt=""
-    />
+    <picture class="spatial-portrait-noscript-poster">
+      <source
+        media="(max-width: 800px)"
+        srcset={spatialAvatarAssets.staticPosterMobile}
+      />
+      <img
+        src={spatialAvatarAssets.staticPoster}
+        width="1280"
+        height="720"
+        alt=""
+      />
+    </picture>
   </noscript>
   <p class="spatial-portrait-status" role="status" aria-live="polite" data-spatial-status>
     当前展示三维模型静态海报。

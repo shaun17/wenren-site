@@ -11,8 +11,8 @@ const expectedAvatarAssets = [
   "wenren-avatar-617f0102b1df.glb",
   "wenren-avatar-loading-poster-47853e3d4a94.jpg",
   "wenren-avatar-loading-poster-mobile-f4a45f288e5b.jpg",
-  "wenren-avatar-poster-bb691bbe0b43.jpg",
-  "wenren-avatar-poster-mobile-6b514bf2f2f4.jpg",
+  "wenren-avatar-poster-8a79a7b0a61d.jpg",
+  "wenren-avatar-poster-mobile-49a408e5118b.jpg",
 ];
 const expectedArticleRoutes = [
   "/career/northstar-studio/",
@@ -225,10 +225,10 @@ test("builds the isolated spatial portrait page without changing the homepage", 
         buildRoot,
       ),
     ),
-    access(new URL("3d/wenren-avatar-poster-bb691bbe0b43.jpg", buildRoot)),
+    access(new URL("3d/wenren-avatar-poster-8a79a7b0a61d.jpg", buildRoot)),
     access(
       new URL(
-        "3d/wenren-avatar-poster-mobile-6b514bf2f2f4.jpg",
+        "3d/wenren-avatar-poster-mobile-49a408e5118b.jpg",
         buildRoot,
       ),
     ),
@@ -271,11 +271,11 @@ test("builds the isolated spatial portrait page without changing the homepage", 
   );
   assert.match(
     html,
-    /data-src="\/3d\/wenren-avatar-poster-bb691bbe0b43\.jpg"/,
+    /data-src="\/3d\/wenren-avatar-poster-8a79a7b0a61d\.jpg"/,
   );
   assert.match(
     html,
-    /data-srcset="\/3d\/wenren-avatar-poster-mobile-6b514bf2f2f4\.jpg"/,
+    /data-srcset="\/3d\/wenren-avatar-poster-mobile-49a408e5118b\.jpg"/,
   );
   assert.equal((html.match(/\sloading="eager"/g) ?? []).length, 1);
   assert.doesNotMatch(html, /<link rel="preload" href="\/3d\/wenren-avatar-/);

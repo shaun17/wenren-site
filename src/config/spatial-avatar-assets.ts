@@ -6,7 +6,7 @@ export const spatialAvatarAssets = {
   loadingPoster: "/3d/wenren-avatar-loading-poster-47853e3d4a94.jpg",
   loadingPosterMobile:
     "/3d/wenren-avatar-loading-poster-mobile-f4a45f288e5b.jpg",
-  staticPoster: "/3d/wenren-avatar-poster-bb691bbe0b43.jpg",
+  staticPoster: "/3d/wenren-avatar-poster-8a79a7b0a61d.jpg",
   staticPosterMobile:
-    "/3d/wenren-avatar-poster-mobile-6b514bf2f2f4.jpg",
+    "/3d/wenren-avatar-poster-mobile-49a408e5118b.jpg",
 } as const;

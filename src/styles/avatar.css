@@ -214,11 +214,17 @@
   opacity: 0;
 }
 
-/* 禁用脚本时仍展示完整静态肖像，不依赖运行时移除缓存探测状态。 */
+/* 禁用脚本时仍按视口选择正确静态肖像，不依赖运行时移除缓存探测状态。 */
 .spatial-portrait-noscript-poster {
   position: absolute;
   z-index: 4;
   inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.spatial-portrait-noscript-poster img {
   display: block;
   width: 100%;
   height: 100%;
@@ -322,10 +328,33 @@
   justify-content: flex-end;
 }
 
+.spatial-chapter-intro {
+  padding-bottom: clamp(5.5rem, 10vh, 7.5rem);
+  align-items: flex-end;
+  justify-content: center;
+  text-align: center;
+}
+
 .spatial-copy {
   width: min(36vw, 31rem);
   text-shadow: 0 1px 1.6rem rgba(255, 255, 255, 0.22);
   pointer-events: auto;
+}
+
+.spatial-copy-intro {
+  width: min(76vw, 47rem);
+  color: #f7f2e7;
+  text-shadow: 0 1px 1.4rem rgba(24, 23, 20, 0.72);
+}
+
+.spatial-copy-intro .spatial-eyebrow,
+.spatial-copy-intro .spatial-summary {
+  color: rgba(247, 242, 231, 0.82);
+}
+
+.spatial-copy-intro .spatial-summary {
+  max-width: 43rem;
+  margin-inline: auto;
 }
 
 .spatial-eyebrow {
@@ -525,6 +554,10 @@
     align-items: flex-end;
   }
 
+  .spatial-chapter-intro {
+    padding-bottom: clamp(6.25rem, 15svh, 8rem);
+  }
+
   .spatial-copy {
     width: 100%;
     padding: 1.05rem;
@@ -533,6 +566,14 @@
     background: rgba(239, 236, 226, 0.78);
     box-shadow: 0 1.5rem 4rem rgba(48, 47, 43, 0.12);
     backdrop-filter: blur(14px);
+  }
+
+  .spatial-copy-intro {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
   }
 
   .spatial-copy h1 {

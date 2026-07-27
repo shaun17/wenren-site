@@ -47,9 +47,9 @@ const LOADING_POSTER_SHA256 =
 const LOADING_MOBILE_POSTER_SHA256 =
   "f4a45f288e5b4824acde1e08282ccab2f8e294cd844e01f61dff9b207dab1e90";
 const POSTER_SHA256 =
-  "bb691bbe0b43ab9d50ac21e3db0ede7e5d916bfa9897b0a05263fe62fd6b94d8";
+  "8a79a7b0a61dfa08e267e12ff660f25771739ea5af431a63f53b723311c8db81";
 const MOBILE_POSTER_SHA256 =
-  "6b514bf2f2f416ac7cf8a826de223893f8812438fd4e6280087602f783688b8f";
+  "49a408e5118b9f42729c19f9c6656024b4c5b35a9f2e592d6afc178f13a38f5b";
 const BODY_NODE_NAME = "tripo_node_7ab0ba04-e9ae-45f9-836c-f4b5c53c7fae";
 const EYE_CONTRACTS = [
   {
@@ -176,6 +176,7 @@ const readPortraitBounds = async (buffer) => {
     .toBuffer({ resolveWithObject: true });
   let minimumX = info.width;
   let maximumX = -1;
+  let maximumY = -1;
   let selectedPixels = 0;
 
   for (let y = 0; y < info.height; y += 1) {
@@ -186,6 +187,7 @@ const readPortraitBounds = async (buffer) => {
       if (lightness >= 190) continue;
       minimumX = Math.min(minimumX, x);
       maximumX = Math.max(maximumX, x);
+      maximumY = Math.max(maximumY, y);
       selectedPixels += 1;
     }
   }
@@ -195,15 +197,18 @@ const readPortraitBounds = async (buffer) => {
     centerRatio: (minimumX + maximumX) / (2 * info.width),
     height: info.height,
     maximumX,
+    maximumY,
     minimumX,
     width: info.width,
   };
 };
 
-/** 把肖像布局帧转成固定顺序的向量，集中比较仅允许滚动改变的三个通道。 */
+/** 把肖像布局帧转成固定顺序的向量，集中比较首屏过渡允许改变的全部通道。 */
 const portraitLayoutFrameValues = (frame) => [
+  frame.gazeX,
   frame.modelX,
   frame.modelY,
+  frame.modelYaw,
   frame.scale,
 ];
 
@@ -215,15 +220,33 @@ test("transitions once from the centered close-up to the stable reading layout",
   assert.equal(compact.length, 2);
 
   for (const frame of [...desktop, ...compact]) {
-    assert.deepEqual(Object.keys(frame).sort(), ["modelX", "modelY", "scale"]);
+    assert.deepEqual(Object.keys(frame).sort(), [
+      "gazeX",
+      "modelX",
+      "modelY",
+      "modelYaw",
+      "scale",
+    ]);
     assert.ok(portraitLayoutFrameValues(frame).every(Number.isFinite));
     assert.ok(frame.scale > 0);
   }
 
   assert.equal(desktop[0].modelX, 0, "桌面首屏近景必须水平居中");
-  assert.ok(desktop[1].modelX < 0, "桌面阅读态必须把完整模型固定到左侧");
+  assert.equal(desktop[0].modelYaw, 0, "桌面首屏必须保持正面朝向");
+  assert.equal(desktop[0].gazeX, 0, "桌面首屏必须保持居中目光");
+  assert.ok(desktop[1].modelX < 0, "桌面阅读态必须把模型固定到左侧");
+  assert.ok(
+    desktop[1].modelYaw >= THREE.MathUtils.degToRad(5) &&
+      desktop[1].modelYaw <= THREE.MathUtils.degToRad(12),
+    "桌面阅读态必须只向右轻转 5 至 12 度",
+  );
+  assert.ok(desktop[1].gazeX > 0, "桌面阅读态目光必须配合身体看向右栏");
   assert.equal(compact[0].modelX, 0, "移动端首屏近景必须水平居中");
   assert.equal(compact[1].modelX, 0, "移动端阅读态必须继续保持水平居中");
+  assert.equal(compact[0].modelYaw, 0, "移动端首屏必须保持正面朝向");
+  assert.equal(compact[1].modelYaw, 0, "移动端阅读态不应向侧边旋转");
+  assert.equal(compact[0].gazeX, 0, "移动端首屏必须保持居中目光");
+  assert.equal(compact[1].gazeX, 0, "移动端阅读态必须保持居中目光");
   assert.ok(desktop[0].scale > desktop[1].scale, "桌面首屏必须比阅读态更近");
   assert.ok(compact[0].scale > compact[1].scale, "移动端首屏必须比阅读态更近");
 
@@ -250,13 +273,15 @@ test("transitions once from the centered close-up to the stable reading layout",
     ),
   );
 
-  for (const scrollY of [700, 1_000, 1_900, 4_000]) {
-    const progress = readPortraitLayoutProgress(scrollY, 100, 600);
-    assert.equal(progress, 1);
-    assertVectorClose(
-      portraitLayoutFrameValues(readPortraitLayoutFrame(progress, desktop)),
-      portraitLayoutFrameValues(desktop[1]),
-    );
+  for (const frames of [desktop, compact]) {
+    for (const scrollY of [700, 1_000, 1_900, 4_000]) {
+      const progress = readPortraitLayoutProgress(scrollY, 100, 600);
+      assert.equal(progress, 1);
+      assertVectorClose(
+        portraitLayoutFrameValues(readPortraitLayoutFrame(progress, frames)),
+        portraitLayoutFrameValues(frames[1]),
+      );
+    }
   }
 });
 
@@ -820,7 +845,20 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
   assert.match(component, /data-src=\{spatialAvatarAssets\.staticPoster\}/);
   assert.match(component, /data-spatial-static-source/);
   assert.match(component, /data-spatial-static-image/);
-  assert.match(component, /<noscript>[\s\S]*spatial-portrait-noscript-poster/);
+  assert.match(
+    component,
+    /<noscript>[\s\S]*<picture class="spatial-portrait-noscript-poster">/,
+  );
+  assert.match(
+    component,
+    /<noscript>[\s\S]*srcset=\{spatialAvatarAssets\.staticPosterMobile\}/,
+    "无脚本移动端必须使用独立竖版海报",
+  );
+  assert.match(
+    component,
+    /<noscript>[\s\S]*src=\{spatialAvatarAssets\.staticPoster\}/,
+    "无脚本桌面端必须使用独立横版海报",
+  );
   assert.equal((component.match(/loading="eager"/g) ?? []).length, 1);
   assert.match(component, /data-spatial-static-poster[\s\S]*aria-hidden="true"/);
   assert.match(component, /alt=\{`\$\{name\} 的三维人物模型/);
@@ -851,11 +889,11 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
   );
   assert.match(
     builtAvatar,
-    /data-src="\/3d\/wenren-avatar-poster-bb691bbe0b43\.jpg"/,
+    /data-src="\/3d\/wenren-avatar-poster-8a79a7b0a61d\.jpg"/,
   );
   assert.match(
     builtAvatar,
-    /data-srcset="\/3d\/wenren-avatar-poster-mobile-6b514bf2f2f4\.jpg"/,
+    /data-srcset="\/3d\/wenren-avatar-poster-mobile-49a408e5118b\.jpg"/,
   );
   assert.equal((builtAvatar.match(/\sloading="eager"/g) ?? []).length, 1);
   for (const assetPath of [
@@ -884,7 +922,21 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
       (match) => match[1],
     ),
     ["0", "1", "2", "3"],
-    "独立首屏之后仍必须完整保留四个右栏目录章节",
+    "独立首屏之后仍必须完整保留 About 与三个目录章节",
+  );
+  assert.match(
+    builtAvatar,
+    /<section class="spatial-chapter spatial-chapter-intro" data-spatial-chapter="0"><div class="spatial-copy spatial-copy-intro">/,
+    "构建产物中的 About 必须继续使用居中介绍样式",
+  );
+  assert.deepEqual(
+    [
+      ...builtAvatar.matchAll(
+        /<section class="spatial-chapter spatial-chapter-directory" data-spatial-chapter="(\d+)"/g,
+      ),
+    ].map((match) => match[1]),
+    ["1", "2", "3"],
+    "只有 Résumé、Independent 与 Notes 可以进入右栏",
   );
 
   assert.equal((avatarPage.match(/data-spatial-hero/g) ?? []).length, 1);
@@ -893,6 +945,18 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
       (match) => match[1],
     ),
     ["0", "1", "2", "3"],
+  );
+  assert.match(
+    avatarPage,
+    /<section class="spatial-chapter spatial-chapter-intro" data-spatial-chapter="0">\s*<div class="spatial-copy spatial-copy-intro">/,
+  );
+  assert.deepEqual(
+    [
+      ...avatarPage.matchAll(
+        /<section class="spatial-chapter spatial-chapter-directory" data-spatial-chapter="(\d+)"/g,
+      ),
+    ].map((match) => match[1]),
+    ["1", "2", "3"],
   );
 
   assert.match(bootstrap, /prefers-reduced-motion: reduce/);
@@ -988,7 +1052,9 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
   assert.match(scene, /createPortraitLayoutFrames/);
   assert.match(scene, /readPortraitLayoutFrame/);
   assert.match(scene, /readPortraitLayoutProgress/);
-  assert.match(scene, /portraitGroup\.add\(modelFrame\)/);
+  assert.match(scene, /const portraitPoseGroup = new THREE\.Group\(\)/);
+  assert.match(scene, /portraitGroup\.add\(portraitPoseGroup\)/);
+  assert.match(scene, /portraitPoseGroup\.add\(modelFrame\)/);
   assert.match(
     scene,
     /portraitGroup\.position\.set\(currentModelX, currentModelY, 0\)/,
@@ -1001,12 +1067,38 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
   assert.doesNotMatch(
     scene,
     /currentModelZ|currentCameraY|currentCameraZ|currentCameraTargetY|currentYaw|currentPitch|currentRoll/,
-    "滚动只允许改变横纵位置与缩放，不得再插值纵深、相机或身体角度",
+    "滚动不得再插值纵深、相机、俯仰或横滚",
+  );
+  assert.match(
+    scene,
+    /currentModelYaw = THREE\.MathUtils\.lerp\(\s*currentModelYaw,\s*layoutFrame\.modelYaw,\s*modelFactor,?\s*\)/,
+    "一次性阅读姿态必须与位移缩放使用同一阻尼收敛",
+  );
+  assert.equal(
+    (scene.match(/portraitPoseGroup\.rotation\.y = currentModelYaw/g) ?? [])
+      .length,
+    2,
+    "姿态层只在逐帧渲染和模型首帧同步同一阅读角度",
+  );
+  assert.match(
+    scene,
+    /Math\.abs\(currentModelYaw - layoutFrame\.modelYaw\) > SETTLE_EPSILON/,
+    "渲染循环必须等待阅读角度真正收敛",
   );
   assert.doesNotMatch(
     scene,
     /pointerBodyGroup|currentPointerYaw|currentPointerPitch|bodyPointerYaw|bodyPointerPitch|portraitGroup\.rotation\./,
     "指针只能更新眼球目标，不得建立或驱动模型外层旋转",
+  );
+  assert.doesNotMatch(
+    scene,
+    /portraitPoseGroup\.(?:rotate[XYZ]|quaternion\.)|portraitPoseGroup\.rotation\.(?:x|z)\s*=/,
+    "固定姿态层只能接收布局帧声明的水平转角",
+  );
+  assert.match(
+    scene,
+    /const gazeX = pointerActive \? pointerX : layoutFrame\.gazeX/,
+    "无指针输入时双眼必须使用阅读态的右向默认目光",
   );
   assert.match(scene, /pointerClientX = event\.clientX/);
   assert.match(scene, /pointerClientY = event\.clientY/);
@@ -1038,8 +1130,8 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
   assert.doesNotMatch(scene, /cameraUnsettled|bodyUnsettled|updateCameraPresentation/);
   assert.doesNotMatch(
     scene,
-    /(?:layout|story)Frame\.(?:camera|modelZ|yaw|pitch|roll|gaze)/,
-    "章节布局不得携带相机、纵深、身体角度或默认目光通道",
+    /(?:layout|story)Frame\.(?:camera[A-Za-z]*|modelZ|pitch|roll|gazeY)\b/,
+    "章节布局只可携带一次水平姿态与水平默认目光，不得恢复相机或其他身体通道",
   );
   assert.match(
     scene,
@@ -1089,8 +1181,28 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
   );
   assert.match(
     styles,
-    /\.(?:spatial-chapter|spatial-chapter-directory)\s*\{[^}]*justify-content:\s*flex-end/,
-    "桌面端四章内容必须统一放在右栏",
+    /\.spatial-chapter-directory\s*\{[^}]*justify-content:\s*flex-end/,
+    "桌面端后三章内容必须统一放在右栏",
+  );
+  assert.match(
+    styles,
+    /\.spatial-chapter-intro\s*\{[^}]*align-items:\s*flex-end;[^}]*justify-content:\s*center;[^}]*text-align:\s*center/,
+    "About 必须恢复底部居中的旧版布局",
+  );
+  assert.match(
+    styles,
+    /\.spatial-copy-intro\s*\{[^}]*width:\s*min\(76vw, 47rem\);[^}]*color:\s*#f7f2e7/,
+    "About 必须恢复旧版居中文字宽度与前景色",
+  );
+  assert.match(
+    styles,
+    /\.spatial-copy-intro \.spatial-summary\s*\{[^}]*max-width:\s*43rem;[^}]*margin-inline:\s*auto/,
+    "About 摘要必须在宽版文字区中居中",
+  );
+  assert.match(
+    styles,
+    /\.spatial-copy-intro\s*\{[^}]*padding:\s*0;[^}]*border:\s*0;[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;[^}]*backdrop-filter:\s*none/,
+    "移动端 About 必须保持透明旧样式，不得变成目录卡片",
   );
   assert.match(
     styles,
@@ -1245,6 +1357,16 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
     "桌面静态海报需继续为右侧章节文字留出空间",
   );
   assert.ok(Math.abs(staticMobileBounds.centerRatio - 0.5) < 0.02);
+  assert.equal(
+    staticDesktopBounds.maximumY,
+    staticDesktopBounds.height - 1,
+    "桌面静态海报必须把模型下沿裁到画面外",
+  );
+  assert.equal(
+    staticMobileBounds.maximumY,
+    staticMobileBounds.height - 1,
+    "移动端静态海报必须把模型下沿裁到画面外",
+  );
 });
 
 /** 最终 GLB 必须完整保留新附件的双眼控制层级，并以网页安全体积交付。 */
@@ -1512,9 +1634,11 @@ test("keeps the optimized eye rig and textured geometry intact", async (t) => {
     };
   };
 
-  /** 在固定相机与真实透视投影下，首屏和阅读态都只能让指针转动双眼。 */
+  /** 在固定相机与真实透视投影下，布局姿态只转一次，指针仍只能转动双眼。 */
   const portraitStage = new THREE.Group();
-  portraitStage.add(displayFrame);
+  const portraitPoseGroup = new THREE.Group();
+  portraitStage.add(portraitPoseGroup);
+  portraitPoseGroup.add(displayFrame);
   const portraitCamera = new THREE.PerspectiveCamera(30, 16 / 9, 0.1, 20);
   portraitCamera.position.set(0, 0.03, 3.8);
   portraitCamera.lookAt(0, 0.02, 0);
@@ -1541,6 +1665,7 @@ test("keeps the optimized eye rig and textured geometry intact", async (t) => {
     portraitCamera.updateWorldMatrix(true, false);
     portraitStage.position.set(layout.modelX, layout.modelY, 0);
     portraitStage.scale.setScalar(layout.scale);
+    portraitPoseGroup.rotation.y = layout.modelYaw;
     eyePairs.forEach(({ pivot }, index) =>
       pivot.quaternion.copy(baseQuaternions[index]),
     );
@@ -1557,14 +1682,22 @@ test("keeps the optimized eye rig and textured geometry intact", async (t) => {
     }
     if (progress === 1) {
       assert.ok(
-        projectedBounds.minimumY >= -1 && projectedBounds.maximumY <= 1,
-        "阅读态必须在固定相机中完整展示模型",
+        projectedBounds.maximumY < 1,
+        "阅读态必须完整保留头顶，不得从视口上沿裁切",
       );
       const projectedCenterX =
         (projectedBounds.minimumX + projectedBounds.maximumX) / 2;
       if (compact) {
+        assert.ok(
+          projectedBounds.minimumY < -1.01,
+          "移动端阅读态必须把模型自身的截断下沿藏到视口外",
+        );
         assert.ok(Math.abs(projectedCenterX) < 0.08, "移动端阅读态必须保持居中");
       } else {
+        assert.ok(
+          projectedBounds.minimumY < -1.08,
+          "桌面阅读态必须把模型自身的截断下沿充分藏到视口外",
+        );
         assert.ok(projectedCenterX < -0.2, "桌面阅读态必须固定在左半边");
         assert.ok(projectedBounds.maximumX < 0.1, "模型不得侵入右侧目录区域");
       }
@@ -1576,6 +1709,7 @@ test("keeps the optimized eye rig and textured geometry intact", async (t) => {
       portraitStage.updateWorldMatrix(true, true);
       const pupil = meshes.at(-1);
       const portraitStageBefore = portraitStage.matrixWorld.clone();
+      const portraitPoseBefore = portraitPoseGroup.matrixWorld.clone();
       const modelFrameBefore = displayFrame.matrixWorld.clone();
       const center = pupil
         .getWorldPosition(new THREE.Vector3())
@@ -1627,6 +1761,11 @@ test("keeps the optimized eye rig and textured geometry intact", async (t) => {
         1e-12,
       );
       assertVectorClose(
+        portraitPoseGroup.matrixWorld.elements,
+        portraitPoseBefore.elements,
+        1e-12,
+      );
+      assertVectorClose(
         displayFrame.matrixWorld.elements,
         modelFrameBefore.elements,
         1e-12,
@@ -1663,6 +1802,11 @@ test("keeps the optimized eye rig and textured geometry intact", async (t) => {
         1e-12,
       );
       assertVectorClose(
+        portraitPoseGroup.matrixWorld.elements,
+        portraitPoseBefore.elements,
+        1e-12,
+      );
+      assertVectorClose(
         displayFrame.matrixWorld.elements,
         modelFrameBefore.elements,
         1e-12,
@@ -1674,6 +1818,7 @@ test("keeps the optimized eye rig and textured geometry intact", async (t) => {
   );
   portraitStage.position.set(0, 0, 0);
   portraitStage.scale.setScalar(1);
+  portraitPoseGroup.rotation.y = 0;
   portraitStage.updateWorldMatrix(true, true);
 
   const localVertices = eyePairs.map(({ meshes }) =>

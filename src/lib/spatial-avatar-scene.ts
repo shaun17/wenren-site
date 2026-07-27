@@ -5,8 +5,10 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { SPATIAL_AVATAR_READING_PHASE_RATIO } from "../config/spatial-avatar-layout";
 
 export interface PortraitLayoutFrame {
+  gazeX: number;
   modelX: number;
   modelY: number;
+  modelYaw: number;
   scale: number;
 }
 
@@ -80,7 +82,6 @@ const SETTLE_EPSILON = 0.00008;
 const DEFAULT_CAMERA_Y = 0.03;
 const DEFAULT_CAMERA_Z = 3.8;
 const DEFAULT_CAMERA_TARGET_Y = 0.02;
-const DEFAULT_GAZE_X = 0;
 const DEFAULT_GAZE_Y = 0.04;
 export const PORTRAIT_TONE_MAPPING_EXPOSURE = 0.92;
 export const PORTRAIT_ENVIRONMENT_INTENSITY = 0.38;
@@ -184,26 +185,34 @@ export const createPortraitLayoutFrames = (
   return compact
     ? [
         {
+          gazeX: 0,
           modelX: 0,
           modelY: -0.2,
+          modelYaw: 0,
           scale: 1.24,
         },
         {
+          gazeX: 0,
           modelX: 0,
-          modelY: 0.1,
-          scale: 0.84,
+          modelY: -0.11,
+          modelYaw: 0,
+          scale: 0.9,
         },
       ]
     : [
         {
+          gazeX: 0,
           modelX: 0,
           modelY: -0.46,
+          modelYaw: 0,
           scale: 1.48,
         },
         {
-          modelX: -0.72,
-          modelY: -0.015,
-          scale: 0.94,
+          gazeX: 0.24,
+          modelX: -0.7,
+          modelY: -0.12,
+          modelYaw: THREE.MathUtils.degToRad(8),
+          scale: 0.98,
         },
       ];
 };
@@ -216,8 +225,10 @@ export const readPortraitLayoutFrame = (
   const amount = easeLayoutAmount(clamp(progress, 0, 1));
   const [heroFrame, readingFrame] = frames;
   return {
+    gazeX: interpolate(heroFrame.gazeX, readingFrame.gazeX, amount),
     modelX: interpolate(heroFrame.modelX, readingFrame.modelX, amount),
     modelY: interpolate(heroFrame.modelY, readingFrame.modelY, amount),
+    modelYaw: interpolate(heroFrame.modelYaw, readingFrame.modelYaw, amount),
     scale: interpolate(heroFrame.scale, readingFrame.scale, amount),
   };
 };
@@ -403,9 +414,12 @@ export const initSpatialAvatarScene = (
   camera.lookAt(0, DEFAULT_CAMERA_TARGET_Y, 0);
   camera.updateMatrixWorld(true);
 
-  // 展示层只负责首屏到阅读态的一次缩放和左移；相机与身体朝向始终固定。
+  // 展示层只负责首屏到阅读态的一次缩放和左移，姿态层只完成一次轻微右转。
   const portraitGroup = new THREE.Group();
   portraitGroup.name = "PortraitStage";
+  const portraitPoseGroup = new THREE.Group();
+  portraitPoseGroup.name = "PortraitReadingPose";
+  portraitGroup.add(portraitPoseGroup);
   scene.add(portraitGroup, createPortraitLightRig());
 
   let modelScene: THREE.Object3D | null = null;
@@ -444,6 +458,7 @@ export const initSpatialAvatarScene = (
   let layoutFrame = layoutFrames[0];
   let currentModelX = layoutFrame.modelX;
   let currentModelY = layoutFrame.modelY;
+  let currentModelYaw = layoutFrame.modelYaw;
   let currentModelScale = layoutFrame.scale;
   let lastFrameTime = 0;
   const gazeYaw = new THREE.Quaternion();
@@ -532,9 +547,9 @@ export const initSpatialAvatarScene = (
     pointerY = gaze.y;
   };
 
-  /** 将固定默认目光或精细指针输入写入两只眼球的目标姿态。 */
+  /** 将当前布局的默认目光或精细指针输入写入两只眼球的目标姿态。 */
   const updateEyeTargets = (): void => {
-    const gazeX = pointerActive ? pointerX : DEFAULT_GAZE_X;
+    const gazeX = pointerActive ? pointerX : layoutFrame.gazeX;
     const gazeY = pointerActive ? pointerY : DEFAULT_GAZE_Y;
     for (const eye of eyeRigs) {
       setEyeTargetQuaternion(
@@ -600,8 +615,14 @@ export const initSpatialAvatarScene = (
       layoutFrame.scale,
       modelFactor,
     );
+    currentModelYaw = THREE.MathUtils.lerp(
+      currentModelYaw,
+      layoutFrame.modelYaw,
+      modelFactor,
+    );
     portraitGroup.position.set(currentModelX, currentModelY, 0);
     portraitGroup.scale.setScalar(currentModelScale);
+    portraitPoseGroup.rotation.y = currentModelYaw;
     updateBackdropPresentation();
     updateProjectedEyeCenter();
     updatePointerGaze();
@@ -614,6 +635,7 @@ export const initSpatialAvatarScene = (
     const modelUnsettled =
       Math.abs(currentModelX - layoutFrame.modelX) > SETTLE_EPSILON ||
       Math.abs(currentModelY - layoutFrame.modelY) > SETTLE_EPSILON ||
+      Math.abs(currentModelYaw - layoutFrame.modelYaw) > SETTLE_EPSILON ||
       Math.abs(currentModelScale - layoutFrame.scale) > SETTLE_EPSILON;
     const eyesUnsettled = eyeRigs.some(
       (eye) =>
@@ -667,7 +689,7 @@ export const initSpatialAvatarScene = (
     updatePortraitLayout();
   };
 
-  /** 精细指针只控制双眼目光，不改变固定相机或人物身体朝向。 */
+  /** 精细指针只控制双眼目光，不改变固定相机或阅读态身体朝向。 */
   const handlePointerMove = (event: PointerEvent): void => {
     pointerActive = true;
     pointerClientX = event.clientX;
@@ -677,7 +699,7 @@ export const initSpatialAvatarScene = (
     requestRender();
   };
 
-  /** 指针离开页面后让眼球平稳回到固定的默认注视方向。 */
+  /** 指针离开页面后让眼球平稳回到当前布局的默认注视方向。 */
   const handlePointerLeave = (): void => {
     pointerActive = false;
     pointerX = 0;
@@ -852,7 +874,7 @@ export const initSpatialAvatarScene = (
       modelFrame.name = "AvatarFitFrame";
       modelFrame.add(activeScene);
       fitAvatarModel(modelFrame);
-      portraitGroup.add(modelFrame);
+      portraitPoseGroup.add(modelFrame);
 
       eyeRigs = eyePivots.map((eye) => createEyeRig(eye));
       updateEyeTargets();
@@ -860,6 +882,7 @@ export const initSpatialAvatarScene = (
       resize();
       portraitGroup.position.set(currentModelX, currentModelY, 0);
       portraitGroup.scale.setScalar(currentModelScale);
+      portraitPoseGroup.rotation.y = currentModelYaw;
       updateBackdropPresentation();
       updateProjectedEyeCenter();
       updatePointerGaze();
