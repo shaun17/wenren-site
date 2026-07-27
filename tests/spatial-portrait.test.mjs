@@ -6,7 +6,11 @@ import { imageSize } from "image-size";
 import sharp from "sharp";
 import * as THREE from "three";
 import { spatialAvatarAssets } from "../src/config/spatial-avatar-assets.ts";
-import { SPATIAL_AVATAR_READING_PHASE_RATIO } from "../src/config/spatial-avatar-layout.ts";
+import {
+  readSpatialAvatarIntroPresentation,
+  readSpatialAvatarTransitionProgress,
+  SPATIAL_AVATAR_READING_PHASE_RATIO,
+} from "../src/config/spatial-avatar-layout.ts";
 import {
   canPresentSpatialAvatarScene,
   createPortraitLightRig,
@@ -325,6 +329,135 @@ test("transitions once from the centered close-up to the stable reading layout",
       );
     }
   }
+});
+
+/** About 与滚动提示共享模型过渡进度，并按各自节奏单调淡出。 */
+test("fades the avatar introduction with the shared scroll progress", () => {
+  const pageTop = 120;
+  const transitionDistance = 640;
+  assert.equal(
+    readSpatialAvatarTransitionProgress(
+      pageTop - 40,
+      pageTop,
+      transitionDistance,
+    ),
+    0,
+  );
+  assert.equal(
+    readSpatialAvatarTransitionProgress(
+      pageTop + transitionDistance / 2,
+      pageTop,
+      transitionDistance,
+    ),
+    0.5,
+  );
+  assert.equal(
+    readSpatialAvatarTransitionProgress(
+      pageTop + transitionDistance * 2,
+      pageTop,
+      transitionDistance,
+    ),
+    1,
+  );
+
+  const samples = [-1, 0, 0.1, 0.25, 0.34, 0.5, 0.75, 1, 2].map(
+    readSpatialAvatarIntroPresentation,
+  );
+  assert.deepEqual(samples[0], { aboutOpacity: 1, cueOpacity: 1 });
+  assert.deepEqual(samples.at(-1), { aboutOpacity: 0, cueOpacity: 0 });
+  for (const [index, sample] of samples.entries()) {
+    assert.ok(sample.aboutOpacity >= 0 && sample.aboutOpacity <= 1);
+    assert.ok(sample.cueOpacity >= 0 && sample.cueOpacity <= 1);
+    assert.ok(
+      sample.cueOpacity <= sample.aboutOpacity,
+      "滚动提示不能晚于 About 消失",
+    );
+    if (index === 0) continue;
+    assert.ok(sample.aboutOpacity <= samples[index - 1].aboutOpacity);
+    assert.ok(sample.cueOpacity <= samples[index - 1].cueOpacity);
+  }
+  assert.equal(samples[4].cueOpacity, 0, "滚动提示应在首段前半程完全淡出");
+  assert.ok(samples[4].aboutOpacity > 0, "About 应继续随首屏剩余距离渐隐");
+});
+
+/** 目录吸附与半屏蒙版只作用于右栏，窄屏和减少动态路径保持原有可读性。 */
+test("anchors directory chapters over a right-side reading surface", async () => {
+  const [avatarPage, bootstrap, scene, styles] = await Promise.all([
+    readFile(new URL("../src/pages/avatar.astro", import.meta.url), "utf8"),
+    readFile(
+      new URL("../src/lib/spatial-portrait.ts", import.meta.url),
+      "utf8",
+    ),
+    readFile(
+      new URL("../src/lib/spatial-avatar-scene.ts", import.meta.url),
+      "utf8",
+    ),
+    readFile(new URL("../src/styles/avatar.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.deepEqual(
+    [
+      ...avatarPage.matchAll(
+        /data-spatial-chapter="(\d+)"\s+data-spatial-snap-anchor/g,
+      ),
+    ].map((match) => match[1]),
+    ["1", "2", "3"],
+  );
+  assert.equal((avatarPage.match(/data-spatial-snap-anchor/g) ?? []).length, 3);
+  assert.doesNotMatch(
+    avatarPage,
+    /data-spatial-chapter="0"[^>]*data-spatial-snap-anchor/,
+  );
+
+  assert.match(
+    styles,
+    /\.spatial-chapter-directory\s*\{[\s\S]*?background:\s*linear-gradient\([\s\S]*?transparent 0 calc\(50% - 1px\)[\s\S]*?rgba\(239, 235, 225, 0\.82\) 50% 100%[\s\S]*?scroll-snap-align:\s*center;[\s\S]*?scroll-snap-stop:\s*normal;/,
+    "桌面目录背景必须在 50% 分界前完全透明，并以章节中心吸附",
+  );
+  assert.match(
+    styles,
+    /\.spatial-stage\s*\{[\s\S]*?z-index:\s*2;/,
+    "模型舞台必须位于目录背景之上",
+  );
+  assert.match(
+    styles,
+    /\.spatial-copy\s*\{[\s\S]*?z-index:\s*3;/,
+    "目录文字必须位于模型与背景之上",
+  );
+  assert.doesNotMatch(
+    styles,
+    /\.spatial-hero,\s*\.spatial-story\s*\{[^}]*z-index:/,
+    "故事容器不能创建会把目录背景整体压到模型之上的层叠上下文",
+  );
+  assert.match(
+    styles,
+    /@media \(prefers-reduced-motion: no-preference\)\s*\{\s*html:has\(\.spatial-page\)\s*\{\s*scroll-snap-type:\s*y proximity;/,
+    "吸附必须设置在当前页面的根滚动器上",
+  );
+  assert.match(
+    styles,
+    /@media \(max-width: 800px\)[\s\S]*?\.spatial-chapter-directory\s*\{\s*background:\s*none;/,
+    "窄屏不得叠加桌面右半屏蒙版",
+  );
+  assert.match(
+    styles,
+    /@media \(prefers-reduced-motion: reduce\)[\s\S]*?scroll-snap-type:\s*none;[\s\S]*?\.spatial-copy-intro,[\s\S]*?\.spatial-scroll-cue\s*\{\s*opacity:\s*1;/,
+    "减少动态时必须关闭吸附和滚动渐隐",
+  );
+
+  for (const property of [
+    "--spatial-about-opacity",
+    "--spatial-cue-opacity",
+  ]) {
+    assert.match(bootstrap, new RegExp(`style\\.setProperty\\("${property}"`));
+    assert.match(
+      bootstrap,
+      new RegExp(`style\\.removeProperty\\("${property}"\\)`),
+    );
+  }
+  assert.match(bootstrap, /readSpatialAvatarTransitionProgress/);
+  assert.match(bootstrap, /readSpatialAvatarIntroPresentation/);
+  assert.match(scene, /readSpatialAvatarTransitionProgress/);
 });
 
 /** 肖像灯光必须显著抬亮正面，并以中性环境反射补足 PBR 材质层次。 */
@@ -1041,7 +1174,7 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
   assert.deepEqual(
     [
       ...avatarPage.matchAll(
-        /<section class="spatial-chapter spatial-chapter-directory" data-spatial-chapter="(\d+)"/g,
+        /<section\s+class="spatial-chapter spatial-chapter-directory"\s+data-spatial-chapter="(\d+)"/g,
       ),
     ].map((match) => match[1]),
     ["1", "2", "3"],

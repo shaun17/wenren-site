@@ -1,6 +1,8 @@
 .spatial-page {
   --spatial-light-shift: 0vw;
   --spatial-light-scale: 1;
+  --spatial-about-opacity: 1;
+  --spatial-cue-opacity: 1;
   --spatial-ink: #20211e;
   --spatial-muted: rgba(32, 33, 30, 0.64);
   --spatial-line: rgba(32, 33, 30, 0.22);
@@ -110,7 +112,7 @@
 .spatial-stage {
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 2;
   height: 100svh;
   margin-bottom: -100svh;
   overflow: hidden;
@@ -306,7 +308,6 @@
 .spatial-hero,
 .spatial-story {
   position: relative;
-  z-index: 2;
 }
 
 .spatial-hero {
@@ -324,17 +325,29 @@
 }
 
 .spatial-chapter-directory {
+  /* 目录章节自身承载右半屏蒙版，进入和离开都与正文保持同一滚动节奏。 */
+  background: linear-gradient(
+    90deg,
+    transparent 0 calc(50% - 1px),
+    rgba(32, 33, 30, 0.08) calc(50% - 1px) 50%,
+    rgba(239, 235, 225, 0.82) 50% 100%
+  );
   justify-content: flex-end;
+  scroll-snap-align: center;
+  scroll-snap-stop: normal;
 }
 
 .spatial-chapter-intro {
   padding-bottom: clamp(5.5rem, 10vh, 7.5rem);
   align-items: flex-end;
   justify-content: center;
+  scroll-snap-align: start;
   text-align: center;
 }
 
 .spatial-copy {
+  position: relative;
+  z-index: 3;
   width: min(36vw, 31rem);
   text-shadow: 0 1px 1.6rem rgba(255, 255, 255, 0.22);
   pointer-events: auto;
@@ -343,7 +356,9 @@
 .spatial-copy-intro {
   width: min(76vw, 47rem);
   color: #f7f2e7;
+  opacity: var(--spatial-about-opacity);
   text-shadow: 0 1px 1.4rem rgba(24, 23, 20, 0.72);
+  will-change: opacity;
 }
 
 .spatial-copy-intro .spatial-eyebrow,
@@ -436,6 +451,7 @@
 
 .spatial-scroll-cue {
   position: absolute;
+  z-index: 3;
   bottom: clamp(1.25rem, 2.4vw, 2rem);
   left: clamp(1.25rem, 3.4vw, 3.8rem);
   display: flex;
@@ -446,6 +462,8 @@
   font-family: var(--font-mono);
   font-size: 0.62rem;
   letter-spacing: 0.12em;
+  opacity: var(--spatial-cue-opacity);
+  will-change: opacity;
 }
 
 .spatial-scroll-cue span {
@@ -540,6 +558,11 @@
     align-items: flex-end;
   }
 
+  /* 窄屏目录继续使用原有局部卡片，避免半屏蒙版重复遮住居中模型。 */
+  .spatial-chapter-directory {
+    background: none;
+  }
+
   .spatial-chapter-intro {
     padding-bottom: clamp(6.25rem, 15svh, 8rem);
   }
@@ -593,11 +616,28 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  html:has(.spatial-page) {
+    scroll-snap-type: none;
+  }
+
+  .spatial-copy-intro,
+  .spatial-scroll-cue {
+    opacity: 1;
+    will-change: auto;
+  }
+
   .spatial-home-link,
   .spatial-links a,
   .spatial-portrait-canvas,
   .spatial-portrait-fallback {
     transition: none;
+  }
+}
+
+/* 只在空间肖像路由启用轻量吸附，目录最终以视口中心落位。 */
+@media (prefers-reduced-motion: no-preference) {
+  html:has(.spatial-page) {
+    scroll-snap-type: y proximity;
   }
 }
 

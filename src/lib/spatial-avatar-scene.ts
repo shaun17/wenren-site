@@ -2,7 +2,10 @@ import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { SPATIAL_AVATAR_READING_PHASE_RATIO } from "../config/spatial-avatar-layout";
+import {
+  readSpatialAvatarTransitionProgress,
+  SPATIAL_AVATAR_READING_PHASE_RATIO,
+} from "../config/spatial-avatar-layout";
 
 export interface PortraitLayoutFrame {
   gazeX: number;
@@ -239,11 +242,7 @@ export const readPortraitLayoutProgress = (
   pageTop: number,
   transitionDistance: number,
 ): number =>
-  clamp(
-    (scrollY - pageTop) / Math.max(1, transitionDistance),
-    0,
-    1,
-  );
+  readSpatialAvatarTransitionProgress(scrollY, pageTop, transitionDistance);
 
 /** 按当前断点选择桌面或紧凑布局，尺寸变化后重新生成两种状态。 */
 const createResponsivePortraitLayoutFrames = (): readonly [

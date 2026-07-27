@@ -1,4 +1,8 @@
-import { SPATIAL_AVATAR_READING_PHASE_RATIO } from "../config/spatial-avatar-layout";
+import {
+  readSpatialAvatarIntroPresentation,
+  readSpatialAvatarTransitionProgress,
+  SPATIAL_AVATAR_READING_PHASE_RATIO,
+} from "../config/spatial-avatar-layout";
 import { prepareSpatialAvatarModelLoad } from "./spatial-avatar-model";
 
 type SceneCleanup = () => void;
@@ -56,14 +60,23 @@ export const initSpatialPortrait = (root: HTMLElement): SceneCleanup => {
   let phaseUpdateId = 0;
   let pendingSceneLoadController: AbortController | null = null;
 
-  /** 同步首屏与阅读态，静态降级在边界处直接换图而不制造额外动画。 */
+  /** 同步首屏文字、阅读态与静态降级，让所有视觉通道共用同一滚动进度。 */
   const updatePortraitPhase = (): void => {
     const hero = page.querySelector<HTMLElement>("[data-spatial-hero]");
     const pageTop = page.getBoundingClientRect().top + window.scrollY;
     const transitionDistance =
       (hero?.offsetHeight ?? window.innerHeight) *
       SPATIAL_AVATAR_READING_PHASE_RATIO;
-    const isContentPhase = window.scrollY - pageTop >= transitionDistance;
+    const transitionProgress = readSpatialAvatarTransitionProgress(
+      window.scrollY,
+      pageTop,
+      transitionDistance,
+    );
+    const { aboutOpacity, cueOpacity } =
+      readSpatialAvatarIntroPresentation(transitionProgress);
+    const isContentPhase = transitionProgress >= 1;
+    page.style.setProperty("--spatial-about-opacity", aboutOpacity.toFixed(4));
+    page.style.setProperty("--spatial-cue-opacity", cueOpacity.toFixed(4));
     page.classList.toggle("is-content-phase", isContentPhase);
     if (isContentPhase && !root.classList.contains("is-webgl-ready")) {
       void ensureStaticPoster();
@@ -312,6 +325,8 @@ export const initSpatialPortrait = (root: HTMLElement): SceneCleanup => {
     sceneCleanup = null;
     root.classList.remove("is-static-poster-ready");
     page.classList.remove("is-content-phase");
+    page.style.removeProperty("--spatial-about-opacity");
+    page.style.removeProperty("--spatial-cue-opacity");
     delete root.dataset.spatialInitialized;
   };
 

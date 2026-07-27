@@ -298,6 +298,23 @@ test("builds the isolated spatial portrait page without changing the homepage", 
     ),
   );
   assert.match(html, /<p class="spatial-scroll-cue" aria-hidden="true">/);
+  assert.equal(
+    (html.match(/data-spatial-snap-anchor/g) ?? []).length,
+    3,
+    "三个右栏目录必须分别提供中心吸附锚点",
+  );
+  assert.deepEqual(
+    [
+      ...html.matchAll(
+        /<section class="spatial-chapter spatial-chapter-directory" data-spatial-chapter="(\d+)" data-spatial-snap-anchor>/g,
+      ),
+    ].map((match) => match[1]),
+    ["1", "2", "3"],
+  );
+  assert.doesNotMatch(
+    html,
+    /data-spatial-chapter="0"[^>]*data-spatial-snap-anchor/,
+  );
   assert.deepEqual(
     [...html.matchAll(/data-spatial-chapter="(\d+)"/g)].map(
       (match) => match[1],
