@@ -1,4 +1,6 @@
 ---
+import { spatialAvatarAssets } from "../config/spatial-avatar-assets";
+
 interface Props {
   name: string;
 }
@@ -7,20 +9,52 @@ const { name } = Astro.props;
 ---
 
 <figure class="spatial-portrait" data-spatial-portrait>
-  <picture class="spatial-portrait-fallback">
+  <picture
+    class="spatial-portrait-fallback spatial-portrait-loading-poster"
+    data-spatial-loading-poster
+  >
+    <source
+      media="(prefers-reduced-motion: reduce) and (max-width: 800px)"
+      srcset={spatialAvatarAssets.staticPosterMobile}
+    />
+    <source
+      media="(prefers-reduced-motion: reduce)"
+      srcset={spatialAvatarAssets.staticPoster}
+    />
     <source
       media="(max-width: 800px)"
-      srcset="/3d/wenren-avatar-poster-mobile-6b514bf2f2f4.jpg"
+      srcset={spatialAvatarAssets.loadingPosterMobile}
     />
     <img
       class="spatial-portrait-fallback-image"
-      src="/3d/wenren-avatar-poster-bb691bbe0b43.jpg"
-      width="1280"
-      height="720"
+      src={spatialAvatarAssets.loadingPoster}
+      width="2560"
+      height="1440"
       alt={`${name} 的三维人物模型：短发，穿灰色圆领上衣`}
       loading="eager"
       decoding="async"
       fetchpriority="high"
+    />
+  </picture>
+  <picture
+    class="spatial-portrait-fallback spatial-portrait-static-poster"
+    data-spatial-static-poster
+    aria-hidden="true"
+  >
+    <source
+      media="(max-width: 800px)"
+      data-spatial-static-source
+      data-srcset={spatialAvatarAssets.staticPosterMobile}
+    />
+    <img
+      class="spatial-portrait-fallback-image"
+      data-spatial-static-image
+      data-src={spatialAvatarAssets.staticPoster}
+      width="1280"
+      height="720"
+      alt=""
+      decoding="async"
+      fetchpriority="low"
     />
   </picture>
   <canvas class="spatial-portrait-canvas" aria-hidden="true" data-spatial-canvas></canvas>

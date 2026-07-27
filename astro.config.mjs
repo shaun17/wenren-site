@@ -11,6 +11,8 @@ export default defineConfig({
   site: siteConfig.origin,
   output: "static",
   trailingSlash: "always",
+  // 仅对显式标记的站内链接启用页面预取；Avatar 模型仍由独立的网况守卫控制。
+  prefetch: true,
   build: {
     format: "directory",
   },

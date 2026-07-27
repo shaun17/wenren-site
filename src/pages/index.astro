@@ -34,7 +34,7 @@ const headlinePrefixTail = siteConfig.home.headline.prefix.slice(
     <section class="hero" aria-labelledby="hero-title">
       <p class="hero-kicker">{siteConfig.brand.kicker}</p>
 
-      <h1 id="hero-title"><a class="hero-avatar-link animated-underline" href="/avatar/" aria-label={`查看 ${siteConfig.brand.name} 的 3D 形象`}>{headlineBrandLabel}</a>{headlinePrefixTail}<a class="hero-headline-link animated-underline" href={headlineCategory.path}>{siteConfig.home.headline.linkLabel}</a>{siteConfig.home.headline.suffix}</h1>
+      <h1 id="hero-title"><a class="hero-avatar-link animated-underline" href="/avatar/" aria-label={`查看 ${siteConfig.brand.name} 的 3D 形象`} data-avatar-link data-astro-prefetch="hover">{headlineBrandLabel}</a>{headlinePrefixTail}<a class="hero-headline-link animated-underline" href={headlineCategory.path}>{siteConfig.home.headline.linkLabel}</a>{siteConfig.home.headline.suffix}</h1>
     </section>
 
     <section class="home-information" aria-label="个人信息">
@@ -59,4 +59,17 @@ const headlinePrefixTail = siteConfig.home.headline.prefix.slice(
       </footer>
     </section>
   </main>
+
+  <script>
+    import { initSpatialAvatarPrefetch } from "../lib/spatial-avatar-prefetch";
+
+    /** 只为首页明确的空间肖像入口安排模型缓存预热。 */
+    const initializeSpatialAvatarPrefetch = (): void => {
+      const avatarLink =
+        document.querySelector<HTMLAnchorElement>("[data-avatar-link]");
+      if (avatarLink) initSpatialAvatarPrefetch(avatarLink);
+    };
+
+    initializeSpatialAvatarPrefetch();
+  </script>
 </SiteLayout>

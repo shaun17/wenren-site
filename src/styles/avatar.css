@@ -188,6 +188,21 @@
   transition: opacity 420ms ease;
 }
 
+/* 加载态与降级态各自保留正确构图，避免首帧居中和后续静态章节互相牺牲。 */
+.spatial-portrait-static-poster {
+  opacity: 0;
+}
+
+.spatial-portrait.is-static .spatial-portrait-loading-poster,
+.spatial-portrait.is-webgl-unavailable .spatial-portrait-loading-poster {
+  opacity: 0;
+}
+
+.spatial-portrait.is-static .spatial-portrait-static-poster,
+.spatial-portrait.is-webgl-unavailable .spatial-portrait-static-poster {
+  opacity: 1;
+}
+
 .spatial-portrait-fallback-image {
   display: block;
   width: 100%;

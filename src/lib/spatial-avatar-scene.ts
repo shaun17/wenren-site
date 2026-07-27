@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { loadSpatialAvatarModelBytes } from "./spatial-avatar-model";
 
 export interface StoryFrame {
   gazeX: number;
@@ -43,7 +44,6 @@ interface EyeRigContract {
   pivotName: string;
 }
 
-const MODEL_URL = "/3d/wenren-avatar-617f0102b1df.glb";
 const EYE_RIG_CONTRACTS: readonly EyeRigContract[] = [
   {
     pivotName: "EyeAimL",
@@ -842,12 +842,7 @@ export const initSpatialAvatarScene = (
   const loadModel = async (): Promise<void> => {
     let loadedScene: THREE.Object3D | null = null;
     try {
-      const response = await fetch(MODEL_URL, {
-        credentials: "same-origin",
-        signal,
-      });
-      if (!response.ok) throw new Error(`模型请求失败：${response.status}`);
-      const modelBytes = await response.arrayBuffer();
+      const modelBytes = await loadSpatialAvatarModelBytes(signal);
       if (isDisposed) return;
       const gltf = await new GLTFLoader()
         .setMeshoptDecoder(MeshoptDecoder)

@@ -9,6 +9,8 @@ const buildRoot = new URL("../dist/", import.meta.url);
 const publicAvatarRoot = new URL("../public/3d/", import.meta.url);
 const expectedAvatarAssets = [
   "wenren-avatar-617f0102b1df.glb",
+  "wenren-avatar-loading-poster-47853e3d4a94.jpg",
+  "wenren-avatar-loading-poster-mobile-f4a45f288e5b.jpg",
   "wenren-avatar-poster-bb691bbe0b43.jpg",
   "wenren-avatar-poster-mobile-6b514bf2f2f4.jpg",
 ];
@@ -121,6 +123,8 @@ test("builds the four-column homepage with a single journal entry point", async 
     avatarAnchor,
     new RegExp(`aria-label="查看 ${escapeHtmlText(siteConfig.brand.name)} 的 3D 形象"`),
   );
+  assert.match(avatarAnchor, /data-avatar-link/);
+  assert.match(avatarAnchor, /data-astro-prefetch="hover"/);
   assert.doesNotMatch(avatarAnchor, /target=/);
   assert.doesNotMatch(html, /data-spatial-portrait|data-avatar-hero/);
   assert.doesNotMatch(html, /\/3d\/wenren-avatar-/);
@@ -209,6 +213,18 @@ test("builds the isolated spatial portrait page without changing the homepage", 
   await Promise.all([
     access(new URL("avatar/index.html", buildRoot)),
     access(new URL("3d/wenren-avatar-617f0102b1df.glb", buildRoot)),
+    access(
+      new URL(
+        "3d/wenren-avatar-loading-poster-47853e3d4a94.jpg",
+        buildRoot,
+      ),
+    ),
+    access(
+      new URL(
+        "3d/wenren-avatar-loading-poster-mobile-f4a45f288e5b.jpg",
+        buildRoot,
+      ),
+    ),
     access(new URL("3d/wenren-avatar-poster-bb691bbe0b43.jpg", buildRoot)),
     access(
       new URL(
@@ -229,12 +245,37 @@ test("builds the isolated spatial portrait page without changing the homepage", 
   assert.ok(html.includes(`<link rel="canonical" href="${siteConfig.origin}/avatar/">`));
   assert.match(html, /<main class="spatial-page is-spatial-static" data-spatial-page>/);
   assert.match(html, /<figure class="spatial-portrait" data-spatial-portrait>/);
-  assert.match(html, /<picture class="spatial-portrait-fallback">/);
-  assert.match(html, /src="\/3d\/wenren-avatar-poster-bb691bbe0b43\.jpg"/);
+  assert.equal(
+    (html.match(/<picture class="spatial-portrait-fallback/g) ?? []).length,
+    2,
+    "空间肖像页应分别交付居中加载海报与静态降级海报",
+  );
   assert.match(
     html,
-    /srcset="\/3d\/wenren-avatar-poster-mobile-6b514bf2f2f4\.jpg"/,
+    /<picture class="spatial-portrait-fallback spatial-portrait-loading-poster" data-spatial-loading-poster>/,
   );
+  assert.match(
+    html,
+    /src="\/3d\/wenren-avatar-loading-poster-47853e3d4a94\.jpg"/,
+  );
+  assert.match(
+    html,
+    /srcset="\/3d\/wenren-avatar-loading-poster-mobile-f4a45f288e5b\.jpg"/,
+  );
+  assert.match(
+    html,
+    /<picture class="spatial-portrait-fallback spatial-portrait-static-poster" data-spatial-static-poster aria-hidden="true">/,
+  );
+  assert.match(
+    html,
+    /data-src="\/3d\/wenren-avatar-poster-bb691bbe0b43\.jpg"/,
+  );
+  assert.match(
+    html,
+    /data-srcset="\/3d\/wenren-avatar-poster-mobile-6b514bf2f2f4\.jpg"/,
+  );
+  assert.equal((html.match(/\sloading="eager"/g) ?? []).length, 1);
+  assert.doesNotMatch(html, /<link rel="preload" href="\/3d\/wenren-avatar-/);
   assert.match(html, /data-spatial-canvas/);
   assert.equal((html.match(/data-spatial-chapter=/g) ?? []).length, 4);
   assert.ok(findAnchor(html, "/"));

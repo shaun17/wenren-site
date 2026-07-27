@@ -3,7 +3,9 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { imageSize } from "image-size";
+import sharp from "sharp";
 import * as THREE from "three";
+import { spatialAvatarAssets } from "../src/config/spatial-avatar-assets.ts";
 import {
   createPortraitLightRig,
   createStoryFrames,
@@ -13,21 +15,33 @@ import {
   readStoryFrame,
   setEyeTargetQuaternion,
 } from "../src/lib/spatial-avatar-scene.ts";
+import {
+  shouldIdlePrefetchSpatialAvatar,
+  shouldPrefetchSpatialAvatar,
+} from "../src/lib/spatial-avatar-prefetch.ts";
+import { supportsSpatialAvatarWebGL } from "../src/lib/spatial-portrait.ts";
 
-const modelUrl = new URL(
-  "../public/3d/wenren-avatar-617f0102b1df.glb",
-  import.meta.url,
+/** 把站点根路径资源解析到 public 目录，测试与生产代码共享同一份资产契约。 */
+const resolvePublicAssetUrl = (assetPath) =>
+  new URL(`../public${assetPath}`, import.meta.url);
+
+const modelUrl = resolvePublicAssetUrl(spatialAvatarAssets.model);
+const loadingPosterUrl = resolvePublicAssetUrl(
+  spatialAvatarAssets.loadingPoster,
 );
-const posterUrl = new URL(
-  "../public/3d/wenren-avatar-poster-bb691bbe0b43.jpg",
-  import.meta.url,
+const loadingMobilePosterUrl = resolvePublicAssetUrl(
+  spatialAvatarAssets.loadingPosterMobile,
 );
-const mobilePosterUrl = new URL(
-  "../public/3d/wenren-avatar-poster-mobile-6b514bf2f2f4.jpg",
-  import.meta.url,
+const posterUrl = resolvePublicAssetUrl(spatialAvatarAssets.staticPoster);
+const mobilePosterUrl = resolvePublicAssetUrl(
+  spatialAvatarAssets.staticPosterMobile,
 );
 const MODEL_SHA256 =
   "617f0102b1df6e1fb59eac134a3ba0d97f785a3767ba0a24deb0fc65fd14cda7";
+const LOADING_POSTER_SHA256 =
+  "47853e3d4a94b5f4be5bdf7f80ca68b20a326b728ae7e43268fbd2b874356774";
+const LOADING_MOBILE_POSTER_SHA256 =
+  "f4a45f288e5b4824acde1e08282ccab2f8e294cd844e01f61dff9b207dab1e90";
 const POSTER_SHA256 =
   "bb691bbe0b43ab9d50ac21e3db0ede7e5d916bfa9897b0a05263fe62fd6b94d8";
 const MOBILE_POSTER_SHA256 =
@@ -148,6 +162,38 @@ const assertVectorClose = (actual, expected, epsilon = 1e-7) => {
       `第 ${index} 轴偏差过大：${value} !== ${expected[index]}`,
     );
   }
+};
+
+/** 以稳定的暗部阈值提取人物边界，防止内容哈希正确但构图再次偏离画面中心。 */
+const readPortraitBounds = async (buffer) => {
+  const { data, info } = await sharp(buffer)
+    .removeAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  let minimumX = info.width;
+  let maximumX = -1;
+  let selectedPixels = 0;
+
+  for (let y = 0; y < info.height; y += 1) {
+    for (let x = 0; x < info.width; x += 1) {
+      const offset = (y * info.width + x) * info.channels;
+      const lightness =
+        (data[offset] + data[offset + 1] + data[offset + 2]) / 3;
+      if (lightness >= 190) continue;
+      minimumX = Math.min(minimumX, x);
+      maximumX = Math.max(maximumX, x);
+      selectedPixels += 1;
+    }
+  }
+
+  assert.ok(selectedPixels > info.width * info.height * 0.05);
+  return {
+    centerRatio: (minimumX + maximumX) / (2 * info.width),
+    height: info.height,
+    maximumX,
+    minimumX,
+    width: info.width,
+  };
 };
 
 /** 把故事姿态转成固定顺序的数值向量，便于完整比较所有动画通道。 */
@@ -398,15 +444,97 @@ test("maps the pointer onto the rig axes and projected eye center", () => {
   );
 });
 
+/** 首页只为会运行三维场景且网络允许的访问预热模型缓存。 */
+test("guards spatial avatar prefetch for motion and constrained networks", () => {
+  assert.equal(
+    shouldPrefetchSpatialAvatar({
+      effectiveType: "4g",
+      reducedMotion: false,
+      saveData: false,
+    }),
+    true,
+  );
+  assert.equal(
+    shouldPrefetchSpatialAvatar({
+      effectiveType: undefined,
+      reducedMotion: false,
+      saveData: false,
+    }),
+    true,
+    "未知网况仍允许明确的 hover、focus 或 touch 意图触发",
+  );
+  for (const conditions of [
+    { effectiveType: "4g", reducedMotion: true, saveData: false },
+    { effectiveType: "4g", reducedMotion: false, saveData: true },
+    { effectiveType: "slow-2g", reducedMotion: false, saveData: false },
+    { effectiveType: "2g", reducedMotion: false, saveData: false },
+  ]) {
+    assert.equal(shouldPrefetchSpatialAvatar(conditions), false);
+  }
+  assert.equal(
+    shouldIdlePrefetchSpatialAvatar({
+      effectiveType: "4g",
+      reducedMotion: false,
+      saveData: false,
+    }),
+    true,
+  );
+  for (const effectiveType of [undefined, "3g", "2g", "slow-2g"]) {
+    assert.equal(
+      shouldIdlePrefetchSpatialAvatar({
+        effectiveType,
+        reducedMotion: false,
+        saveData: false,
+      }),
+      false,
+    );
+  }
+});
+
+/** 无 WebGL2 时必须在场景包和完整模型请求之前终止动态路径。 */
+test("detects WebGL2 support before preloading the avatar model", () => {
+  let contextReleased = false;
+  assert.equal(
+    supportsSpatialAvatarWebGL(() => ({
+      getContext: () => ({
+        getExtension: () => ({
+          loseContext: () => {
+            contextReleased = true;
+          },
+        }),
+      }),
+    })),
+    true,
+  );
+  assert.equal(contextReleased, true);
+  assert.equal(
+    supportsSpatialAvatarWebGL(() => ({
+      getContext: () => null,
+    })),
+    false,
+  );
+  assert.equal(
+    supportsSpatialAvatarWebGL(() => {
+      throw new Error("WebGL 被浏览器禁用");
+    }),
+    false,
+  );
+});
+
 /** 空间肖像必须保留同模型海报、动态按需加载和完整资源释放路径。 */
 test("keeps the isolated GLB portrait progressive and accessible", async () => {
   const [
     component,
     bootstrap,
     scene,
+    modelLoader,
+    prefetch,
+    homePage,
     styles,
     globalStyles,
     heroStyles,
+    loadingPoster,
+    loadingMobilePoster,
     poster,
     mobilePoster,
     builtHome,
@@ -424,24 +552,47 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
       new URL("../src/lib/spatial-avatar-scene.ts", import.meta.url),
       "utf8",
     ),
+    readFile(
+      new URL("../src/lib/spatial-avatar-model.ts", import.meta.url),
+      "utf8",
+    ),
+    readFile(
+      new URL("../src/lib/spatial-avatar-prefetch.ts", import.meta.url),
+      "utf8",
+    ),
+    readFile(new URL("../src/pages/index.astro", import.meta.url), "utf8"),
     readFile(new URL("../src/styles/avatar.css", import.meta.url), "utf8"),
     readFile(new URL("../src/styles/global.css", import.meta.url), "utf8"),
     readFile(new URL("../src/styles/hero.css", import.meta.url), "utf8"),
+    readFile(loadingPosterUrl),
+    readFile(loadingMobilePosterUrl),
     readFile(posterUrl),
     readFile(mobilePosterUrl),
     readFile(new URL("../dist/index.html", import.meta.url), "utf8"),
     readFile(new URL("../dist/avatar/index.html", import.meta.url), "utf8"),
   ]);
 
-  assert.match(component, /<picture class="spatial-portrait-fallback">/);
   assert.match(
     component,
-    /srcset="\/3d\/wenren-avatar-poster-mobile-6b514bf2f2f4\.jpg"/,
+    /class="spatial-portrait-fallback spatial-portrait-loading-poster"/,
   );
+  assert.match(component, /data-spatial-loading-poster/);
+  assert.match(component, /srcset=\{spatialAvatarAssets\.loadingPosterMobile\}/);
+  assert.match(component, /src=\{spatialAvatarAssets\.loadingPoster\}/);
   assert.match(
     component,
-    /src="\/3d\/wenren-avatar-poster-bb691bbe0b43\.jpg"/,
+    /class="spatial-portrait-fallback spatial-portrait-static-poster"/,
   );
+  assert.match(component, /data-spatial-static-poster/);
+  assert.match(
+    component,
+    /data-srcset=\{spatialAvatarAssets\.staticPosterMobile\}/,
+  );
+  assert.match(component, /data-src=\{spatialAvatarAssets\.staticPoster\}/);
+  assert.match(component, /data-spatial-static-source/);
+  assert.match(component, /data-spatial-static-image/);
+  assert.equal((component.match(/loading="eager"/g) ?? []).length, 1);
+  assert.match(component, /data-spatial-static-poster[\s\S]*aria-hidden="true"/);
   assert.match(component, /alt=\{`\$\{name\} 的三维人物模型/);
   assert.match(
     component,
@@ -451,14 +602,43 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
   assert.doesNotMatch(component, /滚动叙事|移动指针控制目光/);
 
   assert.doesNotMatch(builtHome, /data-spatial-portrait|\/3d\/wenren-avatar-/);
+  assert.match(builtHome, /data-avatar-link/);
+  assert.match(builtHome, /data-astro-prefetch="hover"/);
   assert.match(builtAvatar, /data-spatial-portrait/);
-  assert.match(
-    builtAvatar,
-    /src="\/3d\/wenren-avatar-poster-bb691bbe0b43\.jpg"/,
+  assert.equal(
+    (builtAvatar.match(/<picture class="spatial-portrait-fallback/g) ?? [])
+      .length,
+    2,
+    "构建产物必须分别保留加载海报与静态降级海报",
   );
   assert.match(
     builtAvatar,
-    /srcset="\/3d\/wenren-avatar-poster-mobile-6b514bf2f2f4\.jpg"/,
+    /<picture class="spatial-portrait-fallback spatial-portrait-loading-poster" data-spatial-loading-poster>/,
+  );
+  assert.match(
+    builtAvatar,
+    /<picture class="spatial-portrait-fallback spatial-portrait-static-poster" data-spatial-static-poster aria-hidden="true">/,
+  );
+  assert.match(
+    builtAvatar,
+    /data-src="\/3d\/wenren-avatar-poster-bb691bbe0b43\.jpg"/,
+  );
+  assert.match(
+    builtAvatar,
+    /data-srcset="\/3d\/wenren-avatar-poster-mobile-6b514bf2f2f4\.jpg"/,
+  );
+  assert.equal((builtAvatar.match(/\sloading="eager"/g) ?? []).length, 1);
+  for (const assetPath of [
+    spatialAvatarAssets.loadingPoster,
+    spatialAvatarAssets.loadingPosterMobile,
+    spatialAvatarAssets.staticPoster,
+    spatialAvatarAssets.staticPosterMobile,
+  ]) {
+    assert.ok(builtAvatar.includes(assetPath));
+  }
+  assert.doesNotMatch(
+    builtAvatar,
+    /<link rel="preload" href="\/3d\/wenren-avatar-617f0102b1df\.glb"/,
   );
   assert.match(builtAvatar, /alt="Alice 的三维人物模型/);
   assert.doesNotMatch(builtAvatar, /滚动叙事|移动指针控制目光/);
@@ -488,6 +668,40 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
   assert.match(bootstrap, /sceneCleanup\?\.\(\)/);
   assert.match(bootstrap, /page\.classList\.add\("is-spatial-static"\)/);
   assert.match(bootstrap, /page\.classList\.remove\("is-spatial-static"\)/);
+  assert.match(bootstrap, /getContext\("webgl2"/);
+  assert.match(bootstrap, /WEBGL_lose_context/);
+  assert.match(bootstrap, /data-spatial-avatar-preload/);
+  assert.match(bootstrap, /preload\.rel = "preload"/);
+  assert.match(bootstrap, /preload\.as = "fetch"/);
+  assert.match(bootstrap, /preload\.fetchPriority = "low"/);
+  assert.match(bootstrap, /loadStaticPoster\(\)\.then/);
+  assert.match(bootstrap, /staticPosterSource\.srcset/);
+  assert.match(bootstrap, /staticPosterImage\.src/);
+
+  assert.match(homePage, /data-astro-prefetch="hover"/);
+  assert.match(homePage, /initSpatialAvatarPrefetch\(avatarLink\)/);
+  assert.match(prefetch, /requestIdleCallback\(trigger, \{ timeout: 1_500 \}\)/);
+  assert.match(prefetch, /"pointerenter"/);
+  assert.match(prefetch, /"focus"/);
+  assert.match(prefetch, /"touchstart"/);
+  assert.match(prefetch, /connection\?\.saveData === true/);
+  assert.match(prefetch, /prefers-reduced-motion: reduce/);
+  assert.match(prefetch, /hint\.rel = "prefetch"/);
+  assert.match(prefetch, /hint\.as = "fetch"/);
+  assert.match(prefetch, /loadSpatialAvatarModelBytes\(\)\.catch/);
+  assert.match(prefetch, /shouldIdlePrefetchSpatialAvatar\(conditions\)/);
+  assert.match(prefetch, /conditions\.effectiveType === "4g"/);
+  assert.doesNotMatch(prefetch, /from "three"|WebGLRenderer|GLTFLoader/);
+
+  assert.equal(
+    spatialAvatarAssets.model,
+    "/3d/wenren-avatar-617f0102b1df.glb",
+  );
+  assert.match(
+    modelLoader,
+    /fetch\(spatialAvatarAssets\.model, \{\s*credentials: "same-origin",\s*signal,?\s*\}\)/,
+  );
+  assert.match(modelLoader, /return response\.arrayBuffer\(\)/);
 
   assert.match(scene, /new THREE\.WebGLRenderer/);
   assert.match(
@@ -507,11 +721,10 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
   );
   assert.match(
     scene,
-    /fetch\(MODEL_URL, \{\s*credentials: "same-origin",\s*signal,?\s*\}\)/,
+    /loadSpatialAvatarModelBytes\(signal\)/,
   );
   assert.match(scene, /setMeshoptDecoder\(MeshoptDecoder\)/);
   assert.match(scene, /parseAsync\(modelBytes, "\/"\)/);
-  assert.match(scene, /wenren-avatar-617f0102b1df\.glb/);
   for (const { meshNames, pivotName } of EYE_CONTRACTS) {
     assert.match(scene, new RegExp(pivotName));
     for (const meshName of meshNames) assert.match(scene, new RegExp(meshName));
@@ -646,6 +859,18 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
   assert.match(styles, /will-change:\s*transform/);
   assert.match(styles, /rgba\(103, 100, 92, 0\.095\)/);
   assert.match(styles, /\.spatial-portrait-fallback\s*\{[^}]*z-index:\s*1;/);
+  assert.match(
+    styles,
+    /\.spatial-portrait-static-poster\s*\{[^}]*opacity:\s*0;/,
+  );
+  assert.match(
+    styles,
+    /\.spatial-portrait\.is-static \.spatial-portrait-loading-poster/,
+  );
+  assert.match(
+    styles,
+    /\.spatial-portrait\.is-static \.spatial-portrait-static-poster/,
+  );
   assert.match(styles, /\.spatial-portrait-canvas\s*\{[^}]*z-index:\s*2;/);
   assert.match(
     styles,
@@ -661,6 +886,16 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
   assert.doesNotMatch(styles, /spatial-portrait-hint|spatial-pointer-hint/);
 
   assert.equal(
+    createHash("sha256").update(loadingPoster).digest("hex"),
+    LOADING_POSTER_SHA256,
+    "桌面加载海报必须保持内容寻址一致",
+  );
+  assert.equal(
+    createHash("sha256").update(loadingMobilePoster).digest("hex"),
+    LOADING_MOBILE_POSTER_SHA256,
+    "移动端加载海报必须保持内容寻址一致",
+  );
+  assert.equal(
     createHash("sha256").update(poster).digest("hex"),
     POSTER_SHA256,
     "桌面同模型海报必须保持内容寻址一致",
@@ -670,6 +905,16 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
     MOBILE_POSTER_SHA256,
     "移动端同模型海报必须保持内容寻址一致",
   );
+  assert.deepEqual(imageSize(loadingPoster), {
+    width: 2_560,
+    height: 1_440,
+    type: "jpg",
+  });
+  assert.deepEqual(imageSize(loadingMobilePoster), {
+    width: 780,
+    height: 1_688,
+    type: "jpg",
+  });
   assert.deepEqual(imageSize(poster), {
     width: 1_280,
     height: 720,
@@ -680,6 +925,25 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
     height: 844,
     type: "jpg",
   });
+
+  const [
+    loadingDesktopBounds,
+    loadingMobileBounds,
+    staticDesktopBounds,
+    staticMobileBounds,
+  ] = await Promise.all([
+    readPortraitBounds(loadingPoster),
+    readPortraitBounds(loadingMobilePoster),
+    readPortraitBounds(poster),
+    readPortraitBounds(mobilePoster),
+  ]);
+  assert.ok(Math.abs(loadingDesktopBounds.centerRatio - 0.5) < 0.01);
+  assert.ok(Math.abs(loadingMobileBounds.centerRatio - 0.5) < 0.01);
+  assert.ok(
+    staticDesktopBounds.centerRatio < 0.35,
+    "桌面静态海报需继续为右侧章节文字留出空间",
+  );
+  assert.ok(Math.abs(staticMobileBounds.centerRatio - 0.5) < 0.02);
 });
 
 /** 最终 GLB 必须完整保留新附件的双眼控制层级，并以网页安全体积交付。 */
