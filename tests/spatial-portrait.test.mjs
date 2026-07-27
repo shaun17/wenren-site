@@ -6,9 +6,11 @@ import { imageSize } from "image-size";
 import * as THREE from "three";
 import {
   createPortraitLightRig,
+  createStoryFrames,
   mapPointerToGaze,
   PORTRAIT_ENVIRONMENT_INTENSITY,
   PORTRAIT_TONE_MAPPING_EXPOSURE,
+  readStoryFrame,
   setEyeTargetQuaternion,
 } from "../src/lib/spatial-avatar-scene.ts";
 
@@ -147,6 +149,146 @@ const assertVectorClose = (actual, expected, epsilon = 1e-7) => {
     );
   }
 };
+
+/** 把故事姿态转成固定顺序的数值向量，便于完整比较所有动画通道。 */
+const storyFrameValues = (frame) => [
+  frame.modelX,
+  frame.modelY,
+  frame.modelZ,
+  frame.scale,
+  frame.yaw,
+  frame.pitch,
+  frame.roll,
+  frame.gazeX,
+  frame.gazeY,
+];
+
+/** 四章轨迹必须精确命中两张参考角度，同时逐值保留当前首尾状态。 */
+test("builds the two reference poses between unchanged story endpoints", () => {
+  const desktop = createStoryFrames(false);
+  const compact = createStoryFrames(true);
+  assert.equal(desktop.length, 4);
+  assert.equal(compact.length, 4);
+
+  assert.deepEqual(desktop[0], {
+    modelX: 0,
+    modelY: -0.015,
+    modelZ: 0,
+    scale: 1,
+    yaw: -0.025,
+    pitch: 0.01,
+    roll: 0,
+    gazeX: 0,
+    gazeY: 0.04,
+  });
+  assert.deepEqual(desktop[3], {
+    modelX: 0.68,
+    modelY: -0.04,
+    modelZ: 0,
+    scale: 1.04,
+    yaw: -0.12,
+    pitch: 0.015,
+    roll: 0,
+    gazeX: -0.42,
+    gazeY: 0.02,
+  });
+  assert.deepEqual(compact[0], {
+    modelX: 0,
+    modelY: 0.12,
+    modelZ: 0,
+    scale: 0.92,
+    yaw: -0.025,
+    pitch: 0.01,
+    roll: 0,
+    gazeX: 0,
+    gazeY: 0.04,
+  });
+  assert.deepEqual(compact[3], {
+    modelX: 0.08,
+    modelY: 0.09,
+    modelZ: 0,
+    scale: 0.96,
+    yaw: -0.035,
+    pitch: 0.015,
+    roll: 0,
+    gazeX: -0.42,
+    gazeY: 0.02,
+  });
+
+  assertVectorClose(storyFrameValues(desktop[1]), [
+    -0.7,
+    -0.12,
+    0.85,
+    1.08,
+    THREE.MathUtils.degToRad(-30),
+    THREE.MathUtils.degToRad(18),
+    THREE.MathUtils.degToRad(-2.5),
+    0.42,
+    -0.03,
+  ]);
+  assertVectorClose(storyFrameValues(desktop[2]), [
+    -0.64,
+    -0.16,
+    0.35,
+    1.14,
+    THREE.MathUtils.degToRad(28),
+    THREE.MathUtils.degToRad(-15),
+    THREE.MathUtils.degToRad(2),
+    0.5,
+    -0.12,
+  ]);
+  assertVectorClose(storyFrameValues(compact[1]), [
+    -0.06,
+    0.1,
+    0.18,
+    0.94,
+    THREE.MathUtils.degToRad(-18),
+    THREE.MathUtils.degToRad(11),
+    THREE.MathUtils.degToRad(-1.5),
+    0.42,
+    -0.03,
+  ]);
+  assertVectorClose(storyFrameValues(compact[2]), [
+    -0.05,
+    0.02,
+    0.1,
+    1.02,
+    THREE.MathUtils.degToRad(16),
+    THREE.MathUtils.degToRad(-9),
+    THREE.MathUtils.degToRad(1),
+    0.5,
+    -0.12,
+  ]);
+
+  assert.deepEqual(readStoryFrame(-1, desktop), desktop[0]);
+  assert.deepEqual(readStoryFrame(1 / 3, desktop), desktop[1]);
+  assert.deepEqual(readStoryFrame(2 / 3, desktop), desktop[2]);
+  assert.deepEqual(readStoryFrame(2, desktop), desktop[3]);
+
+  const desktopStartValues = storyFrameValues(desktop[0]);
+  const desktopFirstValues = storyFrameValues(desktop[1]);
+  const firstSegmentQuarter = readStoryFrame(1 / 12, desktop);
+  const quarterEase = 0.15625; // smoothstep(0.25)，锁定关键帧前后的减速曲线。
+  assertVectorClose(
+    storyFrameValues(firstSegmentQuarter),
+    desktopStartValues.map(
+      (value, index) =>
+        value + (desktopFirstValues[index] - value) * quarterEase,
+    ),
+  );
+  const firstSegmentMiddle = readStoryFrame(1 / 6, desktop);
+  assertVectorClose(
+    storyFrameValues(firstSegmentMiddle),
+    desktopStartValues.map(
+      (value, index) => (value + desktopFirstValues[index]) / 2,
+    ),
+  );
+  assert.ok(desktop[1].modelZ > desktop[2].modelZ);
+  assert.ok(desktop[1].yaw < 0 && desktop[1].pitch > 0);
+  assert.ok(desktop[2].yaw > 0 && desktop[2].pitch < 0);
+  assert.ok(Math.abs(compact[1].yaw) < Math.abs(desktop[1].yaw));
+  assert.ok(Math.abs(compact[2].pitch) < Math.abs(desktop[2].pitch));
+});
 
 /** 肖像灯光必须显著抬亮正面，并以中性环境反射补足 PBR 材质层次。 */
 test("builds a bright and balanced portrait light rig", () => {
@@ -328,6 +470,13 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
     builtAvatar,
     /<script type="module" src="\/_astro\/[^"]+\.js"><\/script>/,
   );
+  assert.deepEqual(
+    [...builtAvatar.matchAll(/data-spatial-chapter="(\d+)"/g)].map(
+      (match) => match[1],
+    ),
+    ["0", "1", "2", "3"],
+    "四个滚动章节必须与四个故事姿态逐一对应",
+  );
 
   assert.match(bootstrap, /prefers-reduced-motion: reduce/);
   assert.match(bootstrap, /import\("\.\/spatial-avatar-scene"\)/);
@@ -372,6 +521,22 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
   assert.match(scene, /mesh instanceof THREE\.Mesh/);
   assert.match(scene, /mesh\.parent === pivot/);
   assert.match(scene, /mapPointerToGaze/);
+  assert.match(scene, /storyPoseGroup\.add\(pointerBodyGroup\)/);
+  assert.match(scene, /portraitGroup\.add\(storyPoseGroup\)/);
+  assert.match(scene, /pointerBodyGroup\.add\(modelFrame\)/);
+  assert.match(
+    scene,
+    /portraitGroup\.position\.set\(currentModelX, currentModelY, currentModelZ\)/,
+  );
+  assert.match(
+    scene,
+    /storyPoseGroup\.rotation\.set\(currentPitch, currentYaw, currentRoll\)/,
+  );
+  assert.match(
+    scene,
+    /pointerBodyGroup\.rotation\.set\([\s\S]*?currentPointerPitch,[\s\S]*?currentPointerYaw/,
+  );
+  assert.doesNotMatch(scene, /portraitGroup\.rotation\./);
   assert.match(scene, /pointerClientX = event\.clientX/);
   assert.match(scene, /pointerClientY = event\.clientY/);
   assert.match(scene, /canvas\.getBoundingClientRect\(\)/);
@@ -387,7 +552,10 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
   );
   assert.match(scene, /"--spatial-light-shift"/);
   assert.match(scene, /"--spatial-light-scale"/);
-  assert.match(scene, /clamp\(currentModelScale, 0\.96, 1\.18\)/);
+  assert.match(
+    scene,
+    /camera\.position\.z - currentModelZ/,
+  );
   assert.match(
     scene,
     /updateBackdropPresentation\(\);\s*updateProjectedEyeCenter\(\);\s*updatePointerGaze\(\);\s*updateEyeTargets\(\)/,
@@ -734,6 +902,70 @@ test("keeps the optimized eye rig and textured geometry intact", async (t) => {
     assert.ok(down.y < center.y - 0.0001, "鼠标向下时瞳孔必须向画面下方移动");
     pivot.quaternion.copy(baseQuaternions[eyeIndex]);
   }
+
+  /** 在两张参考姿态和真实透视相机下，双眼仍必须沿屏幕方向追踪指针。 */
+  const storyPoseGroup = new THREE.Group();
+  storyPoseGroup.add(displayFrame);
+  const storyCamera = new THREE.PerspectiveCamera(30, 16 / 9, 0.1, 20);
+  storyCamera.position.set(0, 0.03, 3.8);
+  storyCamera.lookAt(0, 0.02, 0);
+  storyCamera.updateWorldMatrix(true, false);
+  for (const pose of createStoryFrames(false).slice(1, 3)) {
+    storyPoseGroup.position.set(pose.modelX, pose.modelY, pose.modelZ);
+    storyPoseGroup.scale.setScalar(pose.scale);
+    storyPoseGroup.rotation.set(pose.pitch, pose.yaw, pose.roll);
+    for (const [eyeIndex, { meshes, pivot }] of eyePairs.entries()) {
+      eyePairs.forEach(({ pivot: candidate }, index) =>
+        candidate.quaternion.copy(baseQuaternions[index]),
+      );
+      storyPoseGroup.updateWorldMatrix(true, true);
+      const pupil = meshes.at(-1);
+      const center = pupil
+        .getWorldPosition(new THREE.Vector3())
+        .project(storyCamera);
+      const targetQuaternion = new THREE.Quaternion();
+
+      setEyeTargetQuaternion(
+        baseQuaternions[eyeIndex],
+        targetQuaternion,
+        1,
+        0,
+      );
+      pivot.quaternion.copy(targetQuaternion);
+      storyPoseGroup.updateWorldMatrix(true, true);
+      const right = pupil
+        .getWorldPosition(new THREE.Vector3())
+        .project(storyCamera);
+      assert.ok(
+        right.x > center.x + 0.00001,
+        "参考姿态中鼠标向右仍必须让瞳孔投影向右",
+      );
+
+      pivot.quaternion.copy(baseQuaternions[eyeIndex]);
+      setEyeTargetQuaternion(
+        baseQuaternions[eyeIndex],
+        targetQuaternion,
+        0,
+        1,
+      );
+      pivot.quaternion.copy(targetQuaternion);
+      storyPoseGroup.updateWorldMatrix(true, true);
+      const down = pupil
+        .getWorldPosition(new THREE.Vector3())
+        .project(storyCamera);
+      assert.ok(
+        down.y < center.y - 0.00001,
+        "参考姿态中鼠标向下仍必须让瞳孔投影向下",
+      );
+    }
+  }
+  eyePairs.forEach(({ pivot }, index) =>
+    pivot.quaternion.copy(baseQuaternions[index]),
+  );
+  storyPoseGroup.position.set(0, 0, 0);
+  storyPoseGroup.scale.setScalar(1);
+  storyPoseGroup.rotation.set(0, 0, 0);
+  storyPoseGroup.updateWorldMatrix(true, true);
 
   const localVertices = eyePairs.map(({ meshes }) =>
     meshes.map((mesh) => readObservableMeshVertex(mesh)),

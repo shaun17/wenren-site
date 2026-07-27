@@ -3,12 +3,14 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
-interface StoryFrame {
+export interface StoryFrame {
   gazeX: number;
   gazeY: number;
   modelX: number;
   modelY: number;
+  modelZ: number;
   pitch: number;
+  roll: number;
   scale: number;
   yaw: number;
 }
@@ -148,47 +150,60 @@ export const mapPointerToGaze = (
   y: clamp((clientY - region.centerY) / Math.max(1, region.radiusY), -1, 1),
 });
 
-/** 在两个关键值之间做线性插值，让滚动镜头连续而不是跳切。 */
+/** 在两个关键值之间做线性插值，统一生成每个姿态通道。 */
 const interpolate = (from: number, to: number, amount: number): number =>
   from + (to - from) * amount;
 
-/** 根据当前视口为四个章节生成全屏模型位置、尺度与默认目光。 */
-const createStoryFrames = (): readonly StoryFrame[] => {
-  const compact = window.matchMedia("(max-width: 800px)").matches;
+/** 让每段滚动在参考姿态前后自然减速，避免关键帧处突然折向。 */
+const easeStoryAmount = (amount: number): number =>
+  amount * amount * (3 - 2 * amount);
+
+/** 为四个章节生成完整空间姿态；首尾保持原构图，中间两帧对应参考图。 */
+export const createStoryFrames = (
+  compact: boolean,
+): readonly StoryFrame[] => {
   return [
     {
       modelX: 0,
       modelY: compact ? 0.12 : -0.015,
+      modelZ: 0,
       scale: compact ? 0.92 : 1,
       yaw: -0.025,
       pitch: 0.01,
+      roll: 0,
       gazeX: 0,
       gazeY: 0.04,
     },
     {
-      modelX: compact ? -0.08 : -0.66,
-      modelY: compact ? 0.08 : -0.02,
-      scale: compact ? 0.98 : 1.08,
-      yaw: compact ? 0.035 : 0.11,
-      pitch: -0.018,
+      modelX: compact ? -0.06 : -0.7,
+      modelY: compact ? 0.1 : -0.12,
+      modelZ: compact ? 0.18 : 0.85,
+      scale: compact ? 0.94 : 1.08,
+      yaw: THREE.MathUtils.degToRad(compact ? -18 : -30),
+      pitch: THREE.MathUtils.degToRad(compact ? 11 : 18),
+      roll: THREE.MathUtils.degToRad(compact ? -1.5 : -2.5),
       gazeX: 0.42,
       gazeY: -0.03,
     },
     {
-      modelX: compact ? -0.05 : -0.78,
-      modelY: compact ? -0.03 : -0.3,
-      scale: compact ? 1.12 : 1.78,
-      yaw: compact ? 0.02 : 0.07,
-      pitch: compact ? -0.01 : -0.035,
+      modelX: compact ? -0.05 : -0.64,
+      modelY: compact ? 0.02 : -0.16,
+      modelZ: compact ? 0.1 : 0.35,
+      scale: compact ? 1.02 : 1.14,
+      yaw: THREE.MathUtils.degToRad(compact ? 16 : 28),
+      pitch: THREE.MathUtils.degToRad(compact ? -9 : -15),
+      roll: THREE.MathUtils.degToRad(compact ? 1 : 2),
       gazeX: 0.5,
-      gazeY: 0.02,
+      gazeY: -0.12,
     },
     {
       modelX: compact ? 0.08 : 0.68,
       modelY: compact ? 0.09 : -0.04,
+      modelZ: 0,
       scale: compact ? 0.96 : 1.04,
       yaw: compact ? -0.035 : -0.12,
       pitch: 0.015,
+      roll: 0,
       gazeX: -0.42,
       gazeY: 0.02,
     },
@@ -196,25 +211,34 @@ const createStoryFrames = (): readonly StoryFrame[] => {
 };
 
 /** 在相邻章节之间同时插值 DOM 构图、模型姿态和目光目标。 */
-const readStoryFrame = (
+export const readStoryFrame = (
   progress: number,
   frames: readonly StoryFrame[],
 ): StoryFrame => {
   const scaled = clamp(progress, 0, 1) * (frames.length - 1);
   const index = Math.min(frames.length - 2, Math.floor(scaled));
-  const amount = scaled - index;
   const from = frames[index] ?? frames[0];
   const to = frames[index + 1] ?? frames.at(-1) ?? from;
+  const segmentAmount = scaled - index;
+  if (segmentAmount <= 0) return { ...from };
+  if (segmentAmount >= 1) return { ...to };
+  const amount = easeStoryAmount(segmentAmount);
   return {
     modelX: interpolate(from.modelX, to.modelX, amount),
     modelY: interpolate(from.modelY, to.modelY, amount),
+    modelZ: interpolate(from.modelZ, to.modelZ, amount),
     scale: interpolate(from.scale, to.scale, amount),
     yaw: interpolate(from.yaw, to.yaw, amount),
     pitch: interpolate(from.pitch, to.pitch, amount),
+    roll: interpolate(from.roll, to.roll, amount),
     gazeX: interpolate(from.gazeX, to.gazeX, amount),
     gazeY: interpolate(from.gazeY, to.gazeY, amount),
   };
 };
+
+/** 按当前断点选择桌面或紧凑姿态，尺寸变化后可重新生成完整轨迹。 */
+const createResponsiveStoryFrames = (): readonly StoryFrame[] =>
+  createStoryFrames(window.matchMedia("(max-width: 800px)").matches);
 
 /** 只在尺寸变化时测量页面，滚动过程中只读取缓存值。 */
 const measureStory = (page: HTMLElement): StoryMetrics => ({
@@ -374,8 +398,15 @@ export const initSpatialAvatarScene = (
   camera.position.set(0, 0.03, 3.8);
   camera.lookAt(0, 0.02, 0);
 
+  // 位移/纵深、章节角度和指针带动分别占一层，彼此叠加但不互相改写目标值。
   const portraitGroup = new THREE.Group();
   portraitGroup.name = "PortraitStage";
+  const storyPoseGroup = new THREE.Group();
+  storyPoseGroup.name = "StoryPoseGroup";
+  const pointerBodyGroup = new THREE.Group();
+  pointerBodyGroup.name = "PointerBodyGroup";
+  storyPoseGroup.add(pointerBodyGroup);
+  portraitGroup.add(storyPoseGroup);
   scene.add(portraitGroup, createPortraitLightRig());
 
   let modelScene: THREE.Object3D | null = null;
@@ -407,14 +438,18 @@ export const initSpatialAvatarScene = (
   const projectedEyeCenter = new THREE.Vector3();
   const portraitWorldPosition = new THREE.Vector3();
   const projectedPortraitCenter = new THREE.Vector3();
-  let storyFrames = createStoryFrames();
+  let storyFrames = createResponsiveStoryFrames();
   let storyMetrics = measureStory(page);
   let storyFrame = storyFrames[0];
   let currentModelX = storyFrame.modelX;
   let currentModelY = storyFrame.modelY;
+  let currentModelZ = storyFrame.modelZ;
   let currentModelScale = storyFrame.scale;
   let currentYaw = storyFrame.yaw;
   let currentPitch = storyFrame.pitch;
+  let currentRoll = storyFrame.roll;
+  let currentPointerYaw = 0;
+  let currentPointerPitch = 0;
   let lastFrameTime = 0;
   const gazeYaw = new THREE.Quaternion();
   const gazePitch = new THREE.Quaternion();
@@ -436,7 +471,13 @@ export const initSpatialAvatarScene = (
     );
     page.style.setProperty(
       "--spatial-light-scale",
-      clamp(currentModelScale, 0.96, 1.18).toFixed(4),
+      clamp(
+        currentModelScale *
+          (camera.position.z /
+            Math.max(0.5, camera.position.z - currentModelZ)),
+        0.96,
+        1.18,
+      ).toFixed(4),
     );
   };
 
@@ -547,8 +588,9 @@ export const initSpatialAvatarScene = (
     const eyeFactor = 1 - Math.exp(-EYE_DAMPING * delta);
     const bodyPointerYaw = pointerActive ? pointerX * 0.105 : 0;
     const bodyPointerPitch = pointerActive ? -pointerY * 0.055 : 0;
-    const targetYaw = storyFrame.yaw + bodyPointerYaw;
-    const targetPitch = storyFrame.pitch + bodyPointerPitch;
+    const targetYaw = storyFrame.yaw;
+    const targetPitch = storyFrame.pitch;
+    const targetRoll = storyFrame.roll;
 
     currentModelX = THREE.MathUtils.lerp(
       currentModelX,
@@ -560,6 +602,11 @@ export const initSpatialAvatarScene = (
       storyFrame.modelY,
       modelFactor,
     );
+    currentModelZ = THREE.MathUtils.lerp(
+      currentModelZ,
+      storyFrame.modelZ,
+      modelFactor,
+    );
     currentModelScale = THREE.MathUtils.lerp(
       currentModelScale,
       storyFrame.scale,
@@ -567,10 +614,25 @@ export const initSpatialAvatarScene = (
     );
     currentYaw = THREE.MathUtils.lerp(currentYaw, targetYaw, modelFactor);
     currentPitch = THREE.MathUtils.lerp(currentPitch, targetPitch, modelFactor);
-    portraitGroup.position.set(currentModelX, currentModelY, 0);
+    currentRoll = THREE.MathUtils.lerp(currentRoll, targetRoll, modelFactor);
+    currentPointerYaw = THREE.MathUtils.lerp(
+      currentPointerYaw,
+      bodyPointerYaw,
+      modelFactor,
+    );
+    currentPointerPitch = THREE.MathUtils.lerp(
+      currentPointerPitch,
+      bodyPointerPitch,
+      modelFactor,
+    );
+    portraitGroup.position.set(currentModelX, currentModelY, currentModelZ);
     portraitGroup.scale.setScalar(currentModelScale);
-    portraitGroup.rotation.y = currentYaw;
-    portraitGroup.rotation.x = currentPitch;
+    storyPoseGroup.rotation.set(currentPitch, currentYaw, currentRoll);
+    pointerBodyGroup.rotation.set(
+      currentPointerPitch,
+      currentPointerYaw,
+      0,
+    );
     updateBackdropPresentation();
     updateProjectedEyeCenter();
     updatePointerGaze();
@@ -583,10 +645,14 @@ export const initSpatialAvatarScene = (
     const modelUnsettled =
       Math.abs(currentModelX - storyFrame.modelX) > SETTLE_EPSILON ||
       Math.abs(currentModelY - storyFrame.modelY) > SETTLE_EPSILON ||
+      Math.abs(currentModelZ - storyFrame.modelZ) > SETTLE_EPSILON ||
       Math.abs(currentModelScale - storyFrame.scale) > SETTLE_EPSILON;
     const bodyUnsettled =
       Math.abs(currentYaw - targetYaw) > SETTLE_EPSILON ||
-      Math.abs(currentPitch - targetPitch) > SETTLE_EPSILON;
+      Math.abs(currentPitch - targetPitch) > SETTLE_EPSILON ||
+      Math.abs(currentRoll - targetRoll) > SETTLE_EPSILON ||
+      Math.abs(currentPointerYaw - bodyPointerYaw) > SETTLE_EPSILON ||
+      Math.abs(currentPointerPitch - bodyPointerPitch) > SETTLE_EPSILON;
     const eyesUnsettled = eyeRigs.some(
       (eye) =>
         1 - Math.abs(eye.pivot.quaternion.dot(eye.targetQuaternion)) >
@@ -626,7 +692,7 @@ export const initSpatialAvatarScene = (
     renderer.setSize(width, height, false);
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
-    storyFrames = createStoryFrames();
+    storyFrames = createResponsiveStoryFrames();
     storyMetrics = measureStory(page);
     measureCanvasScreenRect();
     updateStory();
@@ -800,7 +866,7 @@ export const initSpatialAvatarScene = (
       modelFrame.name = "AvatarFitFrame";
       modelFrame.add(activeScene);
       fitAvatarModel(modelFrame);
-      portraitGroup.add(modelFrame);
+      pointerBodyGroup.add(modelFrame);
 
       eyeRigs = eyePivots.map((eye) => createEyeRig(eye));
       updateEyeTargets();
@@ -809,12 +875,19 @@ export const initSpatialAvatarScene = (
       portraitGroup.position.set(
         currentModelX,
         currentModelY,
-        0,
+        currentModelZ,
       );
       portraitGroup.scale.setScalar(currentModelScale);
-      portraitGroup.rotation.set(currentPitch, currentYaw, 0);
+      storyPoseGroup.rotation.set(currentPitch, currentYaw, currentRoll);
+      pointerBodyGroup.rotation.set(
+        currentPointerPitch,
+        currentPointerYaw,
+        0,
+      );
       updateBackdropPresentation();
       updateProjectedEyeCenter();
+      updatePointerGaze();
+      updateEyeTargets();
       renderer.render(scene, camera);
       sceneReady = true;
       callbacks.onReady();
