@@ -281,6 +281,34 @@ test("builds the isolated spatial portrait page without changing the homepage", 
   assert.doesNotMatch(html, /<link rel="preload" href="\/3d\/wenren-avatar-/);
   assert.match(html, /data-spatial-canvas/);
   assert.equal((html.match(/data-spatial-chapter=/g) ?? []).length, 4);
+  assert.equal((html.match(/data-spatial-hero/g) ?? []).length, 1);
+  assert.match(
+    html,
+    /<section class="spatial-hero spatial-chapter spatial-chapter-intro" data-spatial-hero data-spatial-chapter="0" aria-labelledby="spatial-about-title">/,
+  );
+  assert.ok(
+    html.includes(
+      `<div class="spatial-story" aria-label="${escapeHtmlText(siteConfig.brand.name)} 个人介绍与目录">`,
+    ),
+  );
+  assert.equal((html.match(/id="spatial-about-title"/g) ?? []).length, 1);
+  assert.ok(
+    html.includes(
+      `<h1 id="spatial-about-title">About ${escapeHtmlText(siteConfig.brand.name)}</h1>`,
+    ),
+  );
+  assert.match(html, /<p class="spatial-scroll-cue" aria-hidden="true">/);
+  assert.deepEqual(
+    [...html.matchAll(/data-spatial-chapter="(\d+)"/g)].map(
+      (match) => match[1],
+    ),
+    ["0", "1", "2", "3"],
+  );
+  assert.ok(
+    html.indexOf("data-spatial-hero") <
+      html.indexOf('data-spatial-chapter="1"'),
+    "默认首屏 About 后必须直接进入 Résumé",
+  );
   assert.ok(findAnchor(html, "/"));
   for (const href of ["/career/", "/works/", "/writing/", "/journal/"]) {
     assert.ok(findAnchor(html, href), `空间肖像页应保留站内入口：${href}`);

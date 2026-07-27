@@ -6,6 +6,7 @@ import { imageSize } from "image-size";
 import sharp from "sharp";
 import * as THREE from "three";
 import { spatialAvatarAssets } from "../src/config/spatial-avatar-assets.ts";
+import { SPATIAL_AVATAR_READING_PHASE_RATIO } from "../src/config/spatial-avatar-layout.ts";
 import {
   canPresentSpatialAvatarScene,
   createPortraitLightRig,
@@ -250,11 +251,43 @@ test("transitions once from the centered close-up to the stable reading layout",
   assert.ok(desktop[0].scale > desktop[1].scale, "桌面首屏必须比阅读态更近");
   assert.ok(compact[0].scale > compact[1].scale, "移动端首屏必须比阅读态更近");
 
-  assert.equal(readPortraitLayoutProgress(80, 100, 600), 0);
-  assert.equal(readPortraitLayoutProgress(100, 100, 600), 0);
-  assert.equal(readPortraitLayoutProgress(400, 100, 600), 0.5);
-  assert.equal(readPortraitLayoutProgress(700, 100, 600), 1);
-  assert.equal(readPortraitLayoutProgress(2_500, 100, 600), 1);
+  const pageTop = 100;
+  const viewportHeight = 800;
+  const transitionDistance =
+    viewportHeight * SPATIAL_AVATAR_READING_PHASE_RATIO;
+  assert.equal(
+    readPortraitLayoutProgress(pageTop - 20, pageTop, transitionDistance),
+    0,
+  );
+  assert.equal(
+    readPortraitLayoutProgress(pageTop, pageTop, transitionDistance),
+    0,
+  );
+  assert.equal(
+    readPortraitLayoutProgress(
+      pageTop + transitionDistance / 2,
+      pageTop,
+      transitionDistance,
+    ),
+    0.5,
+  );
+  assert.equal(
+    readPortraitLayoutProgress(
+      pageTop + transitionDistance,
+      pageTop,
+      transitionDistance,
+    ),
+    1,
+  );
+  assert.equal(
+    readPortraitLayoutProgress(
+      pageTop + viewportHeight,
+      pageTop,
+      transitionDistance,
+    ),
+    1,
+    "Résumé 进入视口时模型必须已经完成阅读态过渡",
+  );
 
   assertVectorClose(
     portraitLayoutFrameValues(readPortraitLayoutFrame(-1, desktop)),
@@ -274,8 +307,17 @@ test("transitions once from the centered close-up to the stable reading layout",
   );
 
   for (const frames of [desktop, compact]) {
-    for (const scrollY of [700, 1_000, 1_900, 4_000]) {
-      const progress = readPortraitLayoutProgress(scrollY, 100, 600);
+    for (const scrollY of [
+      pageTop + viewportHeight,
+      pageTop + viewportHeight * 2,
+      pageTop + viewportHeight * 3,
+      pageTop + viewportHeight * 4,
+    ]) {
+      const progress = readPortraitLayoutProgress(
+        scrollY,
+        pageTop,
+        transitionDistance,
+      );
       assert.equal(progress, 1);
       assertVectorClose(
         portraitLayoutFrameValues(readPortraitLayoutFrame(progress, frames)),
@@ -922,12 +964,33 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
       (match) => match[1],
     ),
     ["0", "1", "2", "3"],
-    "独立首屏之后仍必须完整保留 About 与三个目录章节",
+    "默认首屏 About 与三个目录章节必须共同组成四章",
+  );
+  const builtHeroOpening = builtAvatar.match(
+    /<section class="spatial-hero spatial-chapter spatial-chapter-intro" data-spatial-hero data-spatial-chapter="0" aria-labelledby="spatial-about-title">/,
+  )?.[0];
+  assert.ok(builtHeroOpening, "构建产物必须把 About 合入唯一默认首屏");
+  assert.doesNotMatch(builtHeroOpening, /aria-hidden/);
+  assert.match(
+    builtAvatar,
+    /<div class="spatial-story" aria-label="Alice 个人介绍与目录"><section class="spatial-hero spatial-chapter spatial-chapter-intro"/,
+    "About 与后三章必须属于同一组连续内容",
   );
   assert.match(
     builtAvatar,
-    /<section class="spatial-chapter spatial-chapter-intro" data-spatial-chapter="0"><div class="spatial-copy spatial-copy-intro">/,
-    "构建产物中的 About 必须继续使用居中介绍样式",
+    /<h1 id="spatial-about-title">About Alice<\/h1>/,
+  );
+  assert.match(
+    builtAvatar,
+    /<p class="spatial-scroll-cue" aria-hidden="true">/,
+  );
+  assert.equal((builtAvatar.match(/01 \/ ABOUT/g) ?? []).length, 1);
+  assert.equal((builtAvatar.match(/About Alice/g) ?? []).length, 1);
+  assert.doesNotMatch(builtAvatar, /spatial-hero-marker/);
+  assert.ok(
+    builtAvatar.indexOf("data-spatial-hero") <
+      builtAvatar.indexOf('data-spatial-chapter="1"'),
+    "默认首屏之后必须直接进入 Résumé",
   );
   assert.deepEqual(
     [
@@ -948,7 +1011,32 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
   );
   assert.match(
     avatarPage,
-    /<section class="spatial-chapter spatial-chapter-intro" data-spatial-chapter="0">\s*<div class="spatial-copy spatial-copy-intro">/,
+    /class="spatial-hero spatial-chapter spatial-chapter-intro"\s+data-spatial-hero\s+data-spatial-chapter="0"\s+aria-labelledby="spatial-about-title"/,
+  );
+  assert.match(
+    avatarPage,
+    /<div class="spatial-story" aria-label=\{`\$\{siteConfig\.brand\.name\} 个人介绍与目录`\}>/,
+  );
+  assert.match(
+    avatarPage,
+    /<h1 id="spatial-about-title">About \{siteConfig\.brand\.name\}<\/h1>/,
+  );
+  assert.match(
+    avatarPage,
+    /<p class="spatial-scroll-cue" aria-hidden="true">/,
+  );
+  assert.equal((avatarPage.match(/01 \/ ABOUT/g) ?? []).length, 1);
+  assert.equal(
+    (avatarPage.match(/About \{siteConfig\.brand\.name\}/g) ?? []).length,
+    1,
+  );
+  assert.doesNotMatch(
+    avatarPage,
+    /spatial-hero-marker|aria-hidden="true"[^>]*data-spatial-hero/,
+  );
+  assert.ok(
+    avatarPage.indexOf("data-spatial-hero") <
+      avatarPage.indexOf('data-spatial-chapter="1"'),
   );
   assert.deepEqual(
     [
@@ -982,6 +1070,7 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
   assert.match(bootstrap, /staticPosterSource\.srcset/);
   assert.match(bootstrap, /staticPosterImage\.src/);
   assert.match(bootstrap, /data-spatial-hero/);
+  assert.match(bootstrap, /SPATIAL_AVATAR_READING_PHASE_RATIO/);
   assert.match(
     bootstrap,
     /is-content-phase/,
@@ -1052,6 +1141,7 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
   assert.match(scene, /createPortraitLayoutFrames/);
   assert.match(scene, /readPortraitLayoutFrame/);
   assert.match(scene, /readPortraitLayoutProgress/);
+  assert.match(scene, /SPATIAL_AVATAR_READING_PHASE_RATIO/);
   assert.match(scene, /const portraitPoseGroup = new THREE\.Group\(\)/);
   assert.match(scene, /portraitGroup\.add\(portraitPoseGroup\)/);
   assert.match(scene, /portraitPoseGroup\.add\(modelFrame\)/);
@@ -1173,11 +1263,20 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
   assert.match(styles, /@media \(max-width: 800px\)/);
   assert.match(styles, /--spatial-light-shift:\s*0vw/);
   assert.match(styles, /--spatial-light-scale:\s*1/);
-  assert.match(styles, /min-height:\s*500svh/);
+  assert.doesNotMatch(
+    styles,
+    /\.spatial-page\s*\{[^}]*min-height:/,
+    "页面总高度必须由四个真实章节自然撑开，避免末尾额外空白屏",
+  );
   assert.match(
     styles,
     /\.spatial-hero\s*\{[^}]*min-height:\s*100svh/,
-    "独立首屏必须占据完整视口高度",
+    "承载 About 的默认首屏必须占据完整视口高度",
+  );
+  assert.match(
+    styles,
+    /\.spatial-chapter\s*\{[^}]*min-height:\s*100svh/,
+    "About 与后三章必须各自保持一屏高度",
   );
   assert.match(
     styles,
@@ -1295,7 +1394,7 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
   assert.equal(
     (builtAvatar.match(/data-spatial-hero/g) ?? []).length,
     1,
-    "构建产物必须在四章内容前保留唯一的独立首屏",
+    "构建产物必须由唯一默认首屏直接承载 About",
   );
 
   assert.equal(
