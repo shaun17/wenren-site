@@ -174,7 +174,7 @@ const interpolate = (from: number, to: number, amount: number): number =>
 const easeStoryAmount = (amount: number): number =>
   amount * amount * (3 - 2 * amount);
 
-/** 为四个章节生成完整空间姿态；第一段使用高机位俯视，其余关键帧保留既有构图。 */
+/** 为四个章节生成完整空间姿态；中间两段分别使用高机位俯视和低机位仰视。 */
 export const createStoryFrames = (
   compact: boolean,
 ): readonly StoryFrame[] => {
@@ -197,27 +197,27 @@ export const createStoryFrames = (
       cameraY: compact ? 2.3 : 1.9,
       cameraZ: DEFAULT_CAMERA_Z,
       cameraTargetY: compact ? -0.55 : -0.5,
-      modelX: compact ? -0.06 : -0.7,
-      modelY: compact ? -0.05 : -0.16,
+      modelX: compact ? -0.05 : -0.67,
+      modelY: compact ? 0 : -0.12,
       modelZ: compact ? 0.75 : 1.2,
-      scale: compact ? 1.05 : 1.38,
-      yaw: THREE.MathUtils.degToRad(compact ? -6 : -10),
-      pitch: THREE.MathUtils.degToRad(compact ? 4 : 6),
-      roll: THREE.MathUtils.degToRad(compact ? -0.3 : -1),
+      scale: compact ? 1.05 : 1.41,
+      yaw: THREE.MathUtils.degToRad(compact ? -14 : -20),
+      pitch: THREE.MathUtils.degToRad(compact ? 8 : 10),
+      roll: THREE.MathUtils.degToRad(compact ? -1.5 : -3),
       gazeX: 0.42,
       gazeY: -0.03,
     },
     {
-      cameraY: DEFAULT_CAMERA_Y,
+      cameraY: compact ? -0.35 : -0.45,
       cameraZ: DEFAULT_CAMERA_Z,
       cameraTargetY: DEFAULT_CAMERA_TARGET_Y,
-      modelX: compact ? -0.05 : -0.64,
-      modelY: compact ? 0.02 : -0.16,
+      modelX: compact ? -0.06 : -0.67,
+      modelY: compact ? 0.05 : -0.16,
       modelZ: compact ? 0.1 : 0.35,
-      scale: compact ? 1.02 : 1.14,
-      yaw: THREE.MathUtils.degToRad(compact ? 16 : 28),
-      pitch: THREE.MathUtils.degToRad(compact ? -9 : -15),
-      roll: THREE.MathUtils.degToRad(compact ? 1 : 2),
+      scale: compact ? 1 : 1.14,
+      yaw: THREE.MathUtils.degToRad(compact ? 24 : 36),
+      pitch: THREE.MathUtils.degToRad(compact ? -14 : -20),
+      roll: THREE.MathUtils.degToRad(compact ? 2 : 3.5),
       gazeX: 0.5,
       gazeY: -0.12,
     },
@@ -433,14 +433,11 @@ export const initSpatialAvatarScene = (
   camera.position.set(0, DEFAULT_CAMERA_Y, DEFAULT_CAMERA_Z);
   camera.lookAt(0, DEFAULT_CAMERA_TARGET_Y, 0);
 
-  // 位移/纵深、章节角度和指针带动分别占一层，彼此叠加但不互相改写目标值。
+  // 位移/纵深与章节角度分别占一层；指针只驱动独立眼球，不参与模型变换。
   const portraitGroup = new THREE.Group();
   portraitGroup.name = "PortraitStage";
   const storyPoseGroup = new THREE.Group();
   storyPoseGroup.name = "StoryPoseGroup";
-  const pointerBodyGroup = new THREE.Group();
-  pointerBodyGroup.name = "PointerBodyGroup";
-  storyPoseGroup.add(pointerBodyGroup);
   portraitGroup.add(storyPoseGroup);
   scene.add(portraitGroup, createPortraitLightRig());
 
@@ -487,8 +484,6 @@ export const initSpatialAvatarScene = (
   let currentYaw = storyFrame.yaw;
   let currentPitch = storyFrame.pitch;
   let currentRoll = storyFrame.roll;
-  let currentPointerYaw = 0;
-  let currentPointerPitch = 0;
   let lastFrameTime = 0;
   const gazeYaw = new THREE.Quaternion();
   const gazePitch = new THREE.Quaternion();
@@ -616,7 +611,7 @@ export const initSpatialAvatarScene = (
     frameId = window.requestAnimationFrame(renderFrame);
   };
 
-  /** 使用按时间计算的阻尼平滑相机、模型、身体与目光，收敛后停止请求新帧。 */
+  /** 使用按时间计算的阻尼平滑相机、章节姿态与目光，收敛后停止请求新帧。 */
   const renderFrame = (time: number): void => {
     frameId = 0;
     if (
@@ -635,8 +630,6 @@ export const initSpatialAvatarScene = (
     lastFrameTime = time;
     const modelFactor = 1 - Math.exp(-MODEL_DAMPING * delta);
     const eyeFactor = 1 - Math.exp(-EYE_DAMPING * delta);
-    const bodyPointerYaw = pointerActive ? pointerX * 0.105 : 0;
-    const bodyPointerPitch = pointerActive ? -pointerY * 0.055 : 0;
     const targetYaw = storyFrame.yaw;
     const targetPitch = storyFrame.pitch;
     const targetRoll = storyFrame.roll;
@@ -679,24 +672,9 @@ export const initSpatialAvatarScene = (
     currentYaw = THREE.MathUtils.lerp(currentYaw, targetYaw, modelFactor);
     currentPitch = THREE.MathUtils.lerp(currentPitch, targetPitch, modelFactor);
     currentRoll = THREE.MathUtils.lerp(currentRoll, targetRoll, modelFactor);
-    currentPointerYaw = THREE.MathUtils.lerp(
-      currentPointerYaw,
-      bodyPointerYaw,
-      modelFactor,
-    );
-    currentPointerPitch = THREE.MathUtils.lerp(
-      currentPointerPitch,
-      bodyPointerPitch,
-      modelFactor,
-    );
     portraitGroup.position.set(currentModelX, currentModelY, currentModelZ);
     portraitGroup.scale.setScalar(currentModelScale);
     storyPoseGroup.rotation.set(currentPitch, currentYaw, currentRoll);
-    pointerBodyGroup.rotation.set(
-      currentPointerPitch,
-      currentPointerYaw,
-      0,
-    );
     updateCameraPresentation();
     updateBackdropPresentation();
     updateProjectedEyeCenter();
@@ -720,9 +698,7 @@ export const initSpatialAvatarScene = (
     const bodyUnsettled =
       Math.abs(currentYaw - targetYaw) > SETTLE_EPSILON ||
       Math.abs(currentPitch - targetPitch) > SETTLE_EPSILON ||
-      Math.abs(currentRoll - targetRoll) > SETTLE_EPSILON ||
-      Math.abs(currentPointerYaw - bodyPointerYaw) > SETTLE_EPSILON ||
-      Math.abs(currentPointerPitch - bodyPointerPitch) > SETTLE_EPSILON;
+      Math.abs(currentRoll - targetRoll) > SETTLE_EPSILON;
     const eyesUnsettled = eyeRigs.some(
       (eye) =>
         1 - Math.abs(eye.pivot.quaternion.dot(eye.targetQuaternion)) >
@@ -768,7 +744,7 @@ export const initSpatialAvatarScene = (
     updateStory();
   };
 
-  /** 精细指针控制目光，并让头肩做克制但清晰的伴随转动。 */
+  /** 精细指针只控制双眼目光，模型姿态完全由滚动章节决定。 */
   const handlePointerMove = (event: PointerEvent): void => {
     pointerActive = true;
     pointerClientX = event.clientX;
@@ -931,7 +907,7 @@ export const initSpatialAvatarScene = (
       modelFrame.name = "AvatarFitFrame";
       modelFrame.add(activeScene);
       fitAvatarModel(modelFrame);
-      pointerBodyGroup.add(modelFrame);
+      storyPoseGroup.add(modelFrame);
 
       eyeRigs = eyePivots.map((eye) => createEyeRig(eye));
       updateEyeTargets();
@@ -944,11 +920,6 @@ export const initSpatialAvatarScene = (
       );
       portraitGroup.scale.setScalar(currentModelScale);
       storyPoseGroup.rotation.set(currentPitch, currentYaw, currentRoll);
-      pointerBodyGroup.rotation.set(
-        currentPointerPitch,
-        currentPointerYaw,
-        0,
-      );
       updateCameraPresentation();
       updateBackdropPresentation();
       updateProjectedEyeCenter();

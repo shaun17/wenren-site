@@ -281,27 +281,27 @@ test("builds the overhead and low-angle poses between unchanged endpoints", () =
     1.9,
     3.8,
     -0.5,
-    -0.7,
-    -0.16,
+    -0.67,
+    -0.12,
     1.2,
-    1.38,
-    THREE.MathUtils.degToRad(-10),
-    THREE.MathUtils.degToRad(6),
-    THREE.MathUtils.degToRad(-1),
+    1.41,
+    THREE.MathUtils.degToRad(-20),
+    THREE.MathUtils.degToRad(10),
+    THREE.MathUtils.degToRad(-3),
     0.42,
     -0.03,
   ]);
   assertVectorClose(storyFrameValues(desktop[2]), [
-    0.03,
+    -0.45,
     3.8,
     0.02,
-    -0.64,
+    -0.67,
     -0.16,
     0.35,
     1.14,
-    THREE.MathUtils.degToRad(28),
-    THREE.MathUtils.degToRad(-15),
-    THREE.MathUtils.degToRad(2),
+    THREE.MathUtils.degToRad(36),
+    THREE.MathUtils.degToRad(-20),
+    THREE.MathUtils.degToRad(3.5),
     0.5,
     -0.12,
   ]);
@@ -309,27 +309,27 @@ test("builds the overhead and low-angle poses between unchanged endpoints", () =
     2.3,
     3.8,
     -0.55,
-    -0.06,
     -0.05,
+    0,
     0.75,
     1.05,
-    THREE.MathUtils.degToRad(-6),
-    THREE.MathUtils.degToRad(4),
-    THREE.MathUtils.degToRad(-0.3),
+    THREE.MathUtils.degToRad(-14),
+    THREE.MathUtils.degToRad(8),
+    THREE.MathUtils.degToRad(-1.5),
     0.42,
     -0.03,
   ]);
   assertVectorClose(storyFrameValues(compact[2]), [
-    0.03,
+    -0.35,
     3.8,
     0.02,
-    -0.05,
-    0.02,
+    -0.06,
+    0.05,
     0.1,
-    1.02,
-    THREE.MathUtils.degToRad(16),
-    THREE.MathUtils.degToRad(-9),
-    THREE.MathUtils.degToRad(1),
+    1,
+    THREE.MathUtils.degToRad(24),
+    THREE.MathUtils.degToRad(-14),
+    THREE.MathUtils.degToRad(2),
     0.5,
     -0.12,
   ]);
@@ -379,8 +379,8 @@ test("builds the overhead and low-angle poses between unchanged endpoints", () =
     desktop[1].cameraZ,
   );
   assert.ok(overheadCameraAngle > THREE.MathUtils.degToRad(30));
-  assert.ok(Math.abs(desktop[1].yaw) < THREE.MathUtils.degToRad(15));
-  assert.ok(Math.abs(desktop[1].pitch) < THREE.MathUtils.degToRad(10));
+  assert.ok(Math.abs(desktop[1].yaw) >= THREE.MathUtils.degToRad(20));
+  assert.ok(Math.abs(desktop[1].pitch) >= THREE.MathUtils.degToRad(10));
   const compactOverheadCameraAngle = Math.atan2(
     compact[1].cameraY - compact[1].cameraTargetY,
     compact[1].cameraZ,
@@ -813,9 +813,8 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
   assert.match(scene, /mesh instanceof THREE\.Mesh/);
   assert.match(scene, /mesh\.parent === pivot/);
   assert.match(scene, /mapPointerToGaze/);
-  assert.match(scene, /storyPoseGroup\.add\(pointerBodyGroup\)/);
   assert.match(scene, /portraitGroup\.add\(storyPoseGroup\)/);
-  assert.match(scene, /pointerBodyGroup\.add\(modelFrame\)/);
+  assert.match(scene, /storyPoseGroup\.add\(modelFrame\)/);
   assert.match(
     scene,
     /portraitGroup\.position\.set\(currentModelX, currentModelY, currentModelZ\)/,
@@ -824,9 +823,24 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
     scene,
     /storyPoseGroup\.rotation\.set\(currentPitch, currentYaw, currentRoll\)/,
   );
-  assert.match(
+  assert.equal(
+    (
+      scene.match(
+        /storyPoseGroup\.rotation\.set\(currentPitch, currentYaw, currentRoll\)/g,
+      ) ?? []
+    ).length,
+    2,
+    "故事层只能在逐帧渲染与模型首帧同步既定滚动姿态",
+  );
+  assert.doesNotMatch(
     scene,
-    /pointerBodyGroup\.rotation\.set\([\s\S]*?currentPointerPitch,[\s\S]*?currentPointerYaw/,
+    /storyPoseGroup\.(?:rotate[XYZ]|quaternion\.)|storyPoseGroup\.rotation\.(?:x|y|z)\s*=/,
+    "指针事件不得通过其他入口追加故事层旋转",
+  );
+  assert.doesNotMatch(
+    scene,
+    /pointerBodyGroup|currentPointerYaw|currentPointerPitch|bodyPointerYaw|bodyPointerPitch/,
+    "指针只能更新眼球目标，不得建立或驱动模型外层旋转",
   );
   assert.doesNotMatch(scene, /portraitGroup\.rotation\./);
   assert.match(scene, /pointerClientX = event\.clientX/);
@@ -1273,7 +1287,7 @@ test("keeps the optimized eye rig and textured geometry intact", async (t) => {
     pivot.quaternion.copy(baseQuaternions[eyeIndex]);
   }
 
-  /** 读取瞳孔相对眼球枢轴的屏幕偏移，排除头肩伴随运动。 */
+  /** 读取瞳孔相对眼球枢轴的屏幕偏移，统一验证各姿态中的局部目光。 */
   const readProjectedEyeOffset = (pupil, pivot, camera) => {
     const pupilPosition = pupil
       .getWorldPosition(new THREE.Vector3())
@@ -1284,12 +1298,10 @@ test("keeps the optimized eye rig and textured geometry intact", async (t) => {
     return pupilPosition.sub(pivotPosition);
   };
 
-  /** 在完整运行时层级和真实透视相机下，双眼仍必须沿屏幕方向追踪指针。 */
+  /** 在完整运行时层级和真实透视相机下，指针只转动双眼且不得带动模型。 */
   const portraitStage = new THREE.Group();
   const storyPoseGroup = new THREE.Group();
-  const pointerBodyGroup = new THREE.Group();
-  pointerBodyGroup.add(displayFrame);
-  storyPoseGroup.add(pointerBodyGroup);
+  storyPoseGroup.add(displayFrame);
   portraitStage.add(storyPoseGroup);
   const storyCamera = new THREE.PerspectiveCamera(30, 16 / 9, 0.1, 20);
   const desktopStoryFrames = createStoryFrames(false);
@@ -1324,9 +1336,10 @@ test("keeps the optimized eye rig and textured geometry intact", async (t) => {
       eyePairs.forEach(({ pivot: candidate }, index) =>
         candidate.quaternion.copy(baseQuaternions[index]),
       );
-      pointerBodyGroup.rotation.set(0, 0, 0);
       portraitStage.updateWorldMatrix(true, true);
       const pupil = meshes.at(-1);
+      const storyPoseBefore = storyPoseGroup.quaternion.clone();
+      const modelFrameBefore = displayFrame.matrixWorld.clone();
       const center = pupil
         .getWorldPosition(new THREE.Vector3())
         .project(storyCamera);
@@ -1358,19 +1371,26 @@ test("keeps the optimized eye rig and textured geometry intact", async (t) => {
         right.x > center.x + 0.00001,
         "参考姿态中鼠标向右仍必须让瞳孔投影向右",
       );
-      pointerBodyGroup.rotation.y = 0.105;
-      portraitStage.updateWorldMatrix(true, true);
-      const rightWithBody = readProjectedEyeOffset(
+      const rightOffset = readProjectedEyeOffset(
         pupil,
         pivot,
         storyCamera,
       );
       assert.ok(
-        rightWithBody.x > centerOffset.x + 0.00001,
-        "头肩伴随鼠标后，瞳孔相对眼眶仍必须向右",
+        rightOffset.x > centerOffset.x + 0.00001,
+        "瞳孔相对眼眶必须向右",
+      );
+      assert.deepEqual(
+        storyPoseGroup.quaternion.toArray(),
+        storyPoseBefore.toArray(),
+        "鼠标横向移动不得改变故事身体姿态",
+      );
+      assertVectorClose(
+        displayFrame.matrixWorld.elements,
+        modelFrameBefore.elements,
+        1e-12,
       );
 
-      pointerBodyGroup.rotation.set(0, 0, 0);
       pivot.quaternion.copy(baseQuaternions[eyeIndex]);
       setEyeTargetQuaternion(
         baseQuaternions[eyeIndex],
@@ -1387,16 +1407,24 @@ test("keeps the optimized eye rig and textured geometry intact", async (t) => {
         down.y < center.y - 0.00001,
         "参考姿态中鼠标向下仍必须让瞳孔投影向下",
       );
-      pointerBodyGroup.rotation.x = -0.055;
-      portraitStage.updateWorldMatrix(true, true);
-      const downWithBody = readProjectedEyeOffset(
+      const downOffset = readProjectedEyeOffset(
         pupil,
         pivot,
         storyCamera,
       );
       assert.ok(
-        downWithBody.y < centerOffset.y - 0.00001,
-        "头肩伴随鼠标后，瞳孔相对眼眶仍必须向下",
+        downOffset.y < centerOffset.y - 0.00001,
+        "瞳孔相对眼眶必须向下",
+      );
+      assert.deepEqual(
+        storyPoseGroup.quaternion.toArray(),
+        storyPoseBefore.toArray(),
+        "鼠标纵向移动不得改变故事身体姿态",
+      );
+      assertVectorClose(
+        displayFrame.matrixWorld.elements,
+        modelFrameBefore.elements,
+        1e-12,
       );
     }
   }
@@ -1406,7 +1434,6 @@ test("keeps the optimized eye rig and textured geometry intact", async (t) => {
   portraitStage.position.set(0, 0, 0);
   portraitStage.scale.setScalar(1);
   storyPoseGroup.rotation.set(0, 0, 0);
-  pointerBodyGroup.rotation.set(0, 0, 0);
   portraitStage.updateWorldMatrix(true, true);
 
   const localVertices = eyePairs.map(({ meshes }) =>
