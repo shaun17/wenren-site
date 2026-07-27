@@ -250,7 +250,9 @@
 .spatial-portrait-canvas {
   z-index: 2;
   opacity: 0;
+  pointer-events: none;
   transition: opacity 420ms ease;
+  user-select: none;
 }
 
 .spatial-portrait.is-webgl-ready .spatial-portrait-fallback {
@@ -259,6 +261,17 @@
 
 .spatial-portrait.is-webgl-ready .spatial-portrait-canvas {
   opacity: 1;
+  pointer-events: auto;
+  touch-action: pan-y pinch-zoom;
+}
+
+.spatial-portrait.is-webgl-ready.is-portrait-hovered
+  .spatial-portrait-canvas {
+  cursor: grab;
+}
+
+.spatial-portrait.is-webgl-ready.is-dragging .spatial-portrait-canvas {
+  cursor: grabbing;
 }
 
 .spatial-portrait.is-webgl-unavailable .spatial-portrait-canvas,
@@ -325,16 +338,57 @@
 }
 
 .spatial-chapter-directory {
-  /* 目录章节自身承载右半屏蒙版，进入和离开都与正文保持同一滚动节奏。 */
-  background: linear-gradient(
-    90deg,
-    transparent 0 calc(50% - 1px),
-    rgba(32, 33, 30, 0.08) calc(50% - 1px) 50%,
-    rgba(239, 235, 225, 0.82) 50% 100%
-  );
   justify-content: flex-end;
   scroll-snap-align: center;
   scroll-snap-stop: normal;
+}
+
+/* 目录蒙版在左、上、下三侧共同渐隐，连续底色不再形成任何分割线。 */
+.spatial-chapter-directory::before {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  background: rgba(239, 235, 225, 0.82);
+  content: "";
+  pointer-events: none;
+  -webkit-mask-composite: source-in;
+  -webkit-mask-image:
+    linear-gradient(
+      90deg,
+      transparent 0 43%,
+      rgba(0, 0, 0, 0.2) 47%,
+      rgba(0, 0, 0, 0.61) 53%,
+      #000 61% 100%
+    ),
+    linear-gradient(
+      180deg,
+      transparent 0%,
+      rgba(0, 0, 0, 0.22) 4%,
+      rgba(0, 0, 0, 0.72) 9%,
+      #000 14% 86%,
+      rgba(0, 0, 0, 0.72) 91%,
+      rgba(0, 0, 0, 0.22) 96%,
+      transparent 100%
+    );
+  mask-composite: intersect;
+  mask-image:
+    linear-gradient(
+      90deg,
+      transparent 0 43%,
+      rgba(0, 0, 0, 0.2) 47%,
+      rgba(0, 0, 0, 0.61) 53%,
+      #000 61% 100%
+    ),
+    linear-gradient(
+      180deg,
+      transparent 0%,
+      rgba(0, 0, 0, 0.22) 4%,
+      rgba(0, 0, 0, 0.72) 9%,
+      #000 14% 86%,
+      rgba(0, 0, 0, 0.72) 91%,
+      rgba(0, 0, 0, 0.22) 96%,
+      transparent 100%
+    );
 }
 
 .spatial-chapter-intro {
@@ -558,9 +612,9 @@
     align-items: flex-end;
   }
 
-  /* 窄屏目录继续使用原有局部卡片，避免半屏蒙版重复遮住居中模型。 */
-  .spatial-chapter-directory {
-    background: none;
+  /* 窄屏目录继续使用原有局部卡片，不叠加桌面半屏蒙版。 */
+  .spatial-chapter-directory::before {
+    content: none;
   }
 
   .spatial-chapter-intro {

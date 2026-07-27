@@ -86,8 +86,13 @@ const DEFAULT_CAMERA_Y = 0.03;
 const DEFAULT_CAMERA_Z = 3.8;
 const DEFAULT_CAMERA_TARGET_Y = 0.02;
 const DEFAULT_GAZE_Y = 0.04;
+const PORTRAIT_DRAG_THRESHOLD = 6;
+const PORTRAIT_DRAG_VIEWPORT_RATIO = 0.38;
+const MIN_PORTRAIT_DRAG_DISTANCE = 160;
+const MAX_PORTRAIT_DRAG_DISTANCE = 440;
 export const PORTRAIT_TONE_MAPPING_EXPOSURE = 0.92;
 export const PORTRAIT_ENVIRONMENT_INTENSITY = 0.38;
+export const MAX_PORTRAIT_DRAG_YAW = THREE.MathUtils.degToRad(45);
 
 /** 生成中性影棚环境贴图，让 PBR 材质接收到模型四周真实的反射光。 */
 const createPortraitEnvironment = (
@@ -146,6 +151,29 @@ export const setEyeTargetQuaternion = (
 /** 把数值限制在指定区间，统一保护滚动与指针输入。 */
 const clamp = (value: number, minimum: number, maximum: number): number =>
   Math.min(maximum, Math.max(minimum, value));
+
+/** 把横向拖动映射为人物的绝对水平朝向，并严格限制在正面左右各 45 度。 */
+export const readPortraitDragYaw = (
+  startingYaw: number,
+  deltaX: number,
+  dragDistance: number,
+): number =>
+  clamp(
+    startingYaw +
+      (deltaX / Math.max(1, Math.abs(dragDistance))) *
+        MAX_PORTRAIT_DRAG_YAW,
+    -MAX_PORTRAIT_DRAG_YAW,
+    MAX_PORTRAIT_DRAG_YAW,
+  );
+
+/** 用户尚未拖动时沿用布局朝向；拖动后锁定在安全的绝对水平角度。 */
+export const resolvePortraitYaw = (
+  layoutYaw: number,
+  draggedYaw: number | null,
+): number =>
+  draggedYaw === null
+    ? layoutYaw
+    : clamp(draggedYaw, -MAX_PORTRAIT_DRAG_YAW, MAX_PORTRAIT_DRAG_YAW);
 
 /** 模型完成且 WebGL 上下文可用时，画布才具备安全展示条件。 */
 export const canPresentSpatialAvatarScene = (
@@ -413,15 +441,19 @@ export const initSpatialAvatarScene = (
   camera.lookAt(0, DEFAULT_CAMERA_TARGET_Y, 0);
   camera.updateMatrixWorld(true);
 
-  // 展示层只负责首屏到阅读态的一次缩放和左移，姿态层只完成一次轻微右转。
+  // 展示层负责滚动缩放和左移，阅读姿态与用户拖动各占一层，避免互相覆盖。
   const portraitGroup = new THREE.Group();
   portraitGroup.name = "PortraitStage";
   const portraitPoseGroup = new THREE.Group();
   portraitPoseGroup.name = "PortraitReadingPose";
+  const portraitDragGroup = new THREE.Group();
+  portraitDragGroup.name = "PortraitDragPose";
+  portraitPoseGroup.add(portraitDragGroup);
   portraitGroup.add(portraitPoseGroup);
   scene.add(portraitGroup, createPortraitLightRig());
 
   let modelScene: THREE.Object3D | null = null;
+  let modelMeshes: THREE.Mesh[] = [];
   let eyeRigs: EyeRig[] = [];
   let frameId = 0;
   let layoutUpdateId = 0;
@@ -435,6 +467,12 @@ export const initSpatialAvatarScene = (
   let pointerClientY = 0;
   let pointerX = 0;
   let pointerY = 0;
+  let portraitPointerId: number | null = null;
+  let portraitDragStarted = false;
+  let portraitPointerStartX = 0;
+  let portraitPointerStartY = 0;
+  let portraitDragStartYaw = 0;
+  let draggedModelYaw: number | null = null;
   const pointerGazeRegion: PointerGazeRegion = {
     centerX: window.innerWidth / 2,
     centerY: window.innerHeight / 2,
@@ -452,6 +490,9 @@ export const initSpatialAvatarScene = (
   const portraitWorldPosition = new THREE.Vector3();
   const portraitViewPosition = new THREE.Vector3();
   const projectedPortraitCenter = new THREE.Vector3();
+  const portraitPointerNdc = new THREE.Vector2();
+  const portraitRaycaster = new THREE.Raycaster();
+  const portraitHitBounds = new THREE.Box3();
   let layoutFrames = createResponsivePortraitLayoutFrames();
   let layoutMetrics = measurePortraitLayout(page);
   let layoutFrame = layoutFrames[0];
@@ -546,6 +587,58 @@ export const initSpatialAvatarScene = (
     pointerY = gaze.y;
   };
 
+  /** 先用人物世界边界快速判断悬停，按下时再以真实三角面确认有效命中。 */
+  const isPointerOverPortrait = (
+    clientX: number,
+    clientY: number,
+    precise = true,
+  ): boolean => {
+    if (!sceneReady || !modelScene || modelMeshes.length === 0) return false;
+    const normalizedX =
+      ((clientX - canvasScreenRect.left) / canvasScreenRect.width) * 2 - 1;
+    const normalizedY =
+      -((clientY - canvasScreenRect.top) / canvasScreenRect.height) * 2 + 1;
+    if (
+      normalizedX < -1 ||
+      normalizedX > 1 ||
+      normalizedY < -1 ||
+      normalizedY > 1
+    ) {
+      return false;
+    }
+
+    portraitPointerNdc.set(normalizedX, normalizedY);
+    scene.updateMatrixWorld(true);
+    portraitRaycaster.setFromCamera(portraitPointerNdc, camera);
+    portraitHitBounds.setFromObject(modelScene);
+    if (!portraitRaycaster.ray.intersectsBox(portraitHitBounds)) return false;
+    if (!precise) return true;
+    return portraitRaycaster.intersectObjects(modelMeshes, false).length > 0;
+  };
+
+  /** 按画布宽度确定拖动灵敏度，小屏可够到极限，大屏也不要求拖过长距离。 */
+  const readPortraitDragDistance = (): number =>
+    clamp(
+      canvasScreenRect.width * PORTRAIT_DRAG_VIEWPORT_RATIO,
+      MIN_PORTRAIT_DRAG_DISTANCE,
+      MAX_PORTRAIT_DRAG_DISTANCE,
+    );
+
+  /** 清理候选或进行中的拖动，但保留用户已经停下的最终朝向。 */
+  const resetPortraitPointer = (releaseCapture = true): void => {
+    const pointerId = portraitPointerId;
+    portraitPointerId = null;
+    portraitDragStarted = false;
+    root.classList.remove("is-dragging", "is-portrait-hovered");
+    if (
+      releaseCapture &&
+      pointerId !== null &&
+      canvas.hasPointerCapture(pointerId)
+    ) {
+      canvas.releasePointerCapture(pointerId);
+    }
+  };
+
   /** 将当前布局的默认目光或精细指针输入写入两只眼球的目标姿态。 */
   const updateEyeTargets = (): void => {
     const gazeX = pointerActive ? pointerX : layoutFrame.gazeX;
@@ -622,6 +715,8 @@ export const initSpatialAvatarScene = (
     portraitGroup.position.set(currentModelX, currentModelY, 0);
     portraitGroup.scale.setScalar(currentModelScale);
     portraitPoseGroup.rotation.y = currentModelYaw;
+    portraitDragGroup.rotation.y =
+      resolvePortraitYaw(currentModelYaw, draggedModelYaw) - currentModelYaw;
     updateBackdropPresentation();
     updateProjectedEyeCenter();
     updatePointerGaze();
@@ -663,8 +758,9 @@ export const initSpatialAvatarScene = (
     requestRender();
   };
 
-  /** 合并高频滚动事件，确保每一帧只计算一次首段布局。 */
+  /** 滚动开始时结束当前拖动，并合并高频事件以每帧只计算一次布局。 */
   const scheduleLayoutUpdate = (): void => {
+    if (portraitPointerId !== null) resetPortraitPointer();
     if (layoutUpdateId || isDisposed) return;
     layoutUpdateId = window.requestAnimationFrame(() => {
       layoutUpdateId = 0;
@@ -688,8 +784,9 @@ export const initSpatialAvatarScene = (
     updatePortraitLayout();
   };
 
-  /** 精细指针只控制双眼目光，不改变固定相机或阅读态身体朝向。 */
+  /** 精细指针在非拖动态只控制双眼目光，不改变固定相机或身体朝向。 */
   const handlePointerMove = (event: PointerEvent): void => {
+    if (portraitDragStarted) return;
     pointerActive = true;
     pointerClientX = event.clientX;
     pointerClientY = event.clientY;
@@ -698,8 +795,93 @@ export const initSpatialAvatarScene = (
     requestRender();
   };
 
+  /** 只有主指针直接命中真实模型时，才记录一次潜在的横向拖动。 */
+  const handlePortraitPointerDown = (event: PointerEvent): void => {
+    if (
+      portraitPointerId !== null ||
+      !event.isPrimary ||
+      event.button !== 0 ||
+      !isPointerOverPortrait(event.clientX, event.clientY)
+    ) {
+      return;
+    }
+    portraitPointerId = event.pointerId;
+    portraitPointerStartX = event.clientX;
+    portraitPointerStartY = event.clientY;
+    portraitDragStartYaw = resolvePortraitYaw(
+      currentModelYaw,
+      draggedModelYaw,
+    );
+  };
+
+  /** 横向意图超过阈值后才捕获指针；纵向意图优先交还页面自然滚动。 */
+  const handlePortraitPointerMove = (event: PointerEvent): void => {
+    if (portraitPointerId === null) {
+      root.classList.toggle(
+        "is-portrait-hovered",
+        finePointer &&
+          event.target === canvas &&
+          isPointerOverPortrait(event.clientX, event.clientY, false),
+      );
+      return;
+    }
+    if (event.pointerId !== portraitPointerId) return;
+    if (event.pointerType !== "touch" && (event.buttons & 1) === 0) {
+      resetPortraitPointer();
+      return;
+    }
+
+    const deltaX = event.clientX - portraitPointerStartX;
+    const deltaY = event.clientY - portraitPointerStartY;
+    if (!portraitDragStarted) {
+      if (
+        Math.abs(deltaY) >= PORTRAIT_DRAG_THRESHOLD &&
+        Math.abs(deltaY) > Math.abs(deltaX)
+      ) {
+        resetPortraitPointer(false);
+        return;
+      }
+      if (
+        Math.abs(deltaX) < PORTRAIT_DRAG_THRESHOLD ||
+        Math.abs(deltaX) <= Math.abs(deltaY)
+      ) {
+        return;
+      }
+      portraitDragStarted = true;
+      root.classList.remove("is-portrait-hovered");
+      root.classList.add("is-dragging");
+      canvas.setPointerCapture(event.pointerId);
+    }
+
+    event.preventDefault();
+    pointerActive = finePointer;
+    pointerClientX = event.clientX;
+    pointerClientY = event.clientY;
+    draggedModelYaw = readPortraitDragYaw(
+      portraitDragStartYaw,
+      deltaX,
+      readPortraitDragDistance(),
+    );
+    portraitDragGroup.rotation.y = draggedModelYaw - currentModelYaw;
+    updateProjectedEyeCenter();
+    updatePointerGaze();
+    updateEyeTargets();
+    requestRender();
+  };
+
+  /** 抬起、取消或失去捕获时结束手势，人物保持松手时的最终角度。 */
+  const handlePortraitPointerEnd = (event: PointerEvent): void => {
+    if (event.pointerId !== portraitPointerId) return;
+    resetPortraitPointer(event.type !== "lostpointercapture");
+    requestRender();
+  };
+
+  /** 窗口失焦时释放残留指针捕获，避免回到页面后保留拖动态光标。 */
+  const handleWindowBlur = (): void => resetPortraitPointer();
+
   /** 指针离开页面后让眼球平稳回到当前布局的默认注视方向。 */
   const handlePointerLeave = (): void => {
+    if (portraitPointerId !== null) resetPortraitPointer();
     pointerActive = false;
     pointerX = 0;
     pointerY = 0;
@@ -736,11 +918,13 @@ export const initSpatialAvatarScene = (
     intersectionObserver.disconnect();
     pauseFrames();
     if (modelScene) disposeObjectTree(modelScene);
+    modelMeshes = [];
     portraitGroup.clear();
     environmentRenderTarget.dispose();
     renderer.renderLists.dispose();
     renderer.dispose();
     resetBackdropPresentation();
+    resetPortraitPointer();
     root.classList.remove("is-webgl-ready");
   };
 
@@ -769,6 +953,14 @@ export const initSpatialAvatarScene = (
     signal,
   });
   window.addEventListener("resize", resize, { passive: true, signal });
+  canvas.addEventListener("pointerdown", handlePortraitPointerDown, { signal });
+  window.addEventListener("pointermove", handlePortraitPointerMove, { signal });
+  window.addEventListener("pointerup", handlePortraitPointerEnd, { signal });
+  window.addEventListener("pointercancel", handlePortraitPointerEnd, { signal });
+  canvas.addEventListener("lostpointercapture", handlePortraitPointerEnd, {
+    signal,
+  });
+  window.addEventListener("blur", handleWindowBlur, { signal });
   if (finePointer) {
     window.addEventListener("pointermove", handlePointerMove, {
       passive: true,
@@ -800,6 +992,7 @@ export const initSpatialAvatarScene = (
       isContextLost = true;
       isScenePresented = false;
       pauseFrames();
+      resetPortraitPointer();
       root.classList.remove("is-webgl-ready");
       root.classList.add("is-webgl-unavailable");
       page.classList.add("is-spatial-static");
@@ -869,11 +1062,15 @@ export const initSpatialAvatarScene = (
       const eyePivots = resolveEyePivots(activeScene);
 
       modelScene = activeScene;
+      modelMeshes = [];
+      activeScene.traverse((object) => {
+        if (object instanceof THREE.Mesh) modelMeshes.push(object);
+      });
       const modelFrame = new THREE.Group();
       modelFrame.name = "AvatarFitFrame";
       modelFrame.add(activeScene);
       fitAvatarModel(modelFrame);
-      portraitPoseGroup.add(modelFrame);
+      portraitDragGroup.add(modelFrame);
 
       eyeRigs = eyePivots.map((eye) => createEyeRig(eye));
       updateEyeTargets();
@@ -882,6 +1079,8 @@ export const initSpatialAvatarScene = (
       portraitGroup.position.set(currentModelX, currentModelY, 0);
       portraitGroup.scale.setScalar(currentModelScale);
       portraitPoseGroup.rotation.y = currentModelYaw;
+      portraitDragGroup.rotation.y =
+        resolvePortraitYaw(currentModelYaw, draggedModelYaw) - currentModelYaw;
       updateBackdropPresentation();
       updateProjectedEyeCenter();
       updatePointerGaze();

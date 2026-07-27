@@ -16,11 +16,14 @@ import {
   createPortraitLightRig,
   createPortraitLayoutFrames,
   mapPointerToGaze,
+  MAX_PORTRAIT_DRAG_YAW,
   PORTRAIT_ENVIRONMENT_INTENSITY,
   PORTRAIT_TONE_MAPPING_EXPOSURE,
+  readPortraitDragYaw,
   readPortraitLayoutFrame,
   readPortraitLayoutProgress,
   readPortraitDepthScale,
+  resolvePortraitYaw,
   setEyeTargetQuaternion,
 } from "../src/lib/spatial-avatar-scene.ts";
 import {
@@ -331,6 +334,50 @@ test("transitions once from the centered close-up to the stable reading layout",
   }
 });
 
+/** 横向拖动只产生有限的绝对水平朝向，不改变布局层已有的其他通道。 */
+test("clamps direct portrait dragging to 45 degrees on either side", () => {
+  const dragDistance = 320;
+  const readingYaw = THREE.MathUtils.degToRad(8);
+  assert.equal(MAX_PORTRAIT_DRAG_YAW, Math.PI / 4);
+  assert.equal(readPortraitDragYaw(0, 0, dragDistance), 0);
+  assert.equal(
+    readPortraitDragYaw(0, dragDistance, dragDistance),
+    MAX_PORTRAIT_DRAG_YAW,
+  );
+  assert.equal(
+    readPortraitDragYaw(0, -dragDistance, dragDistance),
+    -MAX_PORTRAIT_DRAG_YAW,
+  );
+  assert.equal(
+    readPortraitDragYaw(readingYaw, dragDistance * 4, dragDistance),
+    MAX_PORTRAIT_DRAG_YAW,
+    "阅读态已有的右转不得让最终角度超过 45 度",
+  );
+  assert.equal(
+    readPortraitDragYaw(readingYaw, -dragDistance * 4, dragDistance),
+    -MAX_PORTRAIT_DRAG_YAW,
+  );
+
+  const samples = [-640, -320, -120, 0, 120, 320, 640].map((deltaX) =>
+    readPortraitDragYaw(readingYaw, deltaX, dragDistance),
+  );
+  for (const [index, yaw] of samples.entries()) {
+    assert.ok(Number.isFinite(yaw));
+    assert.ok(yaw >= -MAX_PORTRAIT_DRAG_YAW);
+    assert.ok(yaw <= MAX_PORTRAIT_DRAG_YAW);
+    if (index > 0) assert.ok(yaw >= samples[index - 1]);
+  }
+  assert.equal(resolvePortraitYaw(readingYaw, null), readingYaw);
+  assert.equal(
+    resolvePortraitYaw(readingYaw, Math.PI),
+    MAX_PORTRAIT_DRAG_YAW,
+  );
+  assert.equal(
+    resolvePortraitYaw(readingYaw, -Math.PI),
+    -MAX_PORTRAIT_DRAG_YAW,
+  );
+});
+
 /** About 与滚动提示共享模型过渡进度，并按各自节奏单调淡出。 */
 test("fades the avatar introduction with the shared scroll progress", () => {
   const pageTop = 120;
@@ -409,11 +456,38 @@ test("anchors directory chapters over a right-side reading surface", async () =>
     /data-spatial-chapter="0"[^>]*data-spatial-snap-anchor/,
   );
 
+  const directoryRule = styles.match(
+    /\.spatial-chapter-directory\s*\{([\s\S]*?)\n\}/,
+  )?.[1];
+  assert.ok(directoryRule, "目录章节必须保留独立样式规则");
+  const directorySurfaceRule = styles.match(
+    /\.spatial-chapter-directory::before\s*\{([\s\S]*?)\n\}/,
+  )?.[1];
+  assert.ok(directorySurfaceRule, "目录章节必须用独立蒙版承载背景色");
   assert.match(
-    styles,
-    /\.spatial-chapter-directory\s*\{[\s\S]*?background:\s*linear-gradient\([\s\S]*?transparent 0 calc\(50% - 1px\)[\s\S]*?rgba\(239, 235, 225, 0\.82\) 50% 100%[\s\S]*?scroll-snap-align:\s*center;[\s\S]*?scroll-snap-stop:\s*normal;/,
-    "桌面目录背景必须在 50% 分界前完全透明，并以章节中心吸附",
+    directorySurfaceRule,
+    /position:\s*absolute;[\s\S]*?z-index:\s*1;[\s\S]*?inset:\s*0;[\s\S]*?content:\s*"";[\s\S]*?pointer-events:\s*none;/,
+    "目录蒙版必须完整覆盖章节且保持在模型与文字下方",
   );
+  assert.match(
+    directorySurfaceRule,
+    /background:\s*rgba\(239, 235, 225, 0\.82\)/,
+  );
+  assert.match(
+    directorySurfaceRule,
+    /(?:^|\n)\s*mask-image:[\s\S]*?linear-gradient\(\s*90deg,\s*transparent 0 43%,[\s\S]*?#000 61% 100%[\s\S]*?linear-gradient\(\s*180deg,\s*transparent 0%,[\s\S]*?#000 14% 86%,[\s\S]*?transparent 100%/,
+    "桌面目录左缘与上下缘必须以同一底色逐级增浓，而不是硬切边界",
+  );
+  assert.match(directorySurfaceRule, /(?:^|\n)\s*-webkit-mask-image:/);
+  assert.match(directorySurfaceRule, /mask-composite:\s*intersect;/);
+  assert.match(directorySurfaceRule, /-webkit-mask-composite:\s*source-in;/);
+  assert.doesNotMatch(
+    directorySurfaceRule,
+    /calc\(50% - 1px\)|rgba\(32, 33, 30, 0\.08\)|\bborder(?:-[a-z-]+)?:|outline|box-shadow/,
+    "目录上缘与左缘不得再出现深色分割线、边框或内阴影",
+  );
+  assert.match(directoryRule, /scroll-snap-align:\s*center;/);
+  assert.match(directoryRule, /scroll-snap-stop:\s*normal;/);
   assert.match(
     styles,
     /\.spatial-stage\s*\{[\s\S]*?z-index:\s*2;/,
@@ -436,7 +510,7 @@ test("anchors directory chapters over a right-side reading surface", async () =>
   );
   assert.match(
     styles,
-    /@media \(max-width: 800px\)[\s\S]*?\.spatial-chapter-directory\s*\{\s*background:\s*none;/,
+    /@media \(max-width: 800px\)[\s\S]*?\.spatial-chapter-directory::before\s*\{\s*content:\s*none;/,
     "窄屏不得叠加桌面右半屏蒙版",
   );
   assert.match(
@@ -1276,8 +1350,10 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
   assert.match(scene, /readPortraitLayoutProgress/);
   assert.match(scene, /SPATIAL_AVATAR_READING_PHASE_RATIO/);
   assert.match(scene, /const portraitPoseGroup = new THREE\.Group\(\)/);
+  assert.match(scene, /const portraitDragGroup = new THREE\.Group\(\)/);
   assert.match(scene, /portraitGroup\.add\(portraitPoseGroup\)/);
-  assert.match(scene, /portraitPoseGroup\.add\(modelFrame\)/);
+  assert.match(scene, /portraitPoseGroup\.add\(portraitDragGroup\)/);
+  assert.match(scene, /portraitDragGroup\.add\(modelFrame\)/);
   assert.match(
     scene,
     /portraitGroup\.position\.set\(currentModelX, currentModelY, 0\)/,
@@ -1308,16 +1384,68 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
     /Math\.abs\(currentModelYaw - layoutFrame\.modelYaw\) > SETTLE_EPSILON/,
     "渲染循环必须等待阅读角度真正收敛",
   );
-  assert.doesNotMatch(
+  assert.match(scene, /const portraitRaycaster = new THREE\.Raycaster\(\)/);
+  assert.match(scene, /portraitRaycaster\.intersectObjects\(modelMeshes, false\)/);
+  assert.match(
     scene,
-    /pointerBodyGroup|currentPointerYaw|currentPointerPitch|bodyPointerYaw|bodyPointerPitch|portraitGroup\.rotation\./,
-    "指针只能更新眼球目标，不得建立或驱动模型外层旋转",
+    /const handlePortraitPointerDown = \(event: PointerEvent\): void => \{[\s\S]*?!event\.isPrimary[\s\S]*?event\.button !== 0[\s\S]*?!isPointerOverPortrait\(event\.clientX, event\.clientY\)[\s\S]*?portraitPointerId = event\.pointerId;/,
+    "只有主指针左键真正命中人物后才能建立拖动候选",
+  );
+  assert.match(
+    scene,
+    /const handlePortraitPointerMove = \(event: PointerEvent\): void => \{[\s\S]*?event\.pointerId !== portraitPointerId[\s\S]*?event\.pointerType !== "touch" && \(event\.buttons & 1\) === 0[\s\S]*?Math\.abs\(deltaY\) > Math\.abs\(deltaX\)[\s\S]*?resetPortraitPointer\(false\)[\s\S]*?Math\.abs\(deltaX\) < PORTRAIT_DRAG_THRESHOLD[\s\S]*?canvas\.setPointerCapture\(event\.pointerId\)[\s\S]*?pointerActive = finePointer;[\s\S]*?pointerClientX = event\.clientX;[\s\S]*?pointerClientY = event\.clientY;[\s\S]*?draggedModelYaw = readPortraitDragYaw\([\s\S]*?updateProjectedEyeCenter\(\);\s*updatePointerGaze\(\);\s*updateEyeTargets\(\);/,
+    "纵向意图必须交还滚动，只有同一指针的横向意图才能捕获并更新角度",
+  );
+  assert.match(
+    scene,
+    /const resetPortraitPointer = \(releaseCapture = true\): void => \{[\s\S]*?canvas\.hasPointerCapture\(pointerId\)[\s\S]*?canvas\.releasePointerCapture\(pointerId\)/,
+    "结束拖动必须安全释放当前指针捕获",
+  );
+  assert.match(
+    scene,
+    /window\.addEventListener\("pointermove", handlePortraitPointerMove/,
+    "拖动处理器必须实际接入全窗口指针移动事件",
+  );
+  assert.match(
+    scene,
+    /const handlePointerLeave = \(\): void => \{\s*if \(portraitPointerId !== null\) resetPortraitPointer\(\);\s*pointerActive = false;/,
+    "未捕获的拖动候选离开页面时也必须清理",
+  );
+  for (const [eventName, target] of [
+    ["pointerdown", "canvas"],
+    ["pointerup", "window"],
+    ["pointercancel", "window"],
+    ["lostpointercapture", "canvas"],
+  ]) {
+    assert.match(
+      scene,
+      new RegExp(
+        `${target}\\.addEventListener\\("${eventName}", handlePortraitPointer(?:Down|End)`,
+      ),
+    );
+  }
+  assert.match(
+    scene,
+    /portraitDragGroup\.rotation\.y =\s*resolvePortraitYaw\(currentModelYaw, draggedModelYaw\) - currentModelYaw/,
+    "用户拖动必须通过独立姿态层叠加，并保持最终绝对角度受限",
   );
   assert.doesNotMatch(
     scene,
-    /portraitPoseGroup\.(?:rotate[XYZ]|quaternion\.)|portraitPoseGroup\.rotation\.(?:x|z)\s*=/,
-    "固定姿态层只能接收布局帧声明的水平转角",
+    /portraitGroup\.rotation\.|portraitDragGroup\.rotation\.(?:x|z)\s*=|camera\.rotation\./,
+    "拖动不得改变展示层、相机、俯仰或横滚",
   );
+  assert.doesNotMatch(
+    scene,
+    /portraitPoseGroup\.(?:rotate[XYZ]|quaternion\.)|portraitPoseGroup\.rotation\.(?:x|z)\s*=|portraitDragGroup\.(?:rotate[XYZ]|quaternion\.)/,
+    "阅读与拖动姿态层都只能接收各自声明的水平转角",
+  );
+  assert.match(
+    styles,
+    /\.spatial-portrait\.is-webgl-ready \.spatial-portrait-canvas\s*\{[\s\S]*?pointer-events:\s*auto;[\s\S]*?touch-action:\s*pan-y pinch-zoom;/,
+    "真实模型就绪后画布才可命中，并保留纵向滚动和双指缩放",
+  );
+  assert.match(styles, /\.is-portrait-hovered[\s\S]*?cursor:\s*grab;/);
+  assert.match(styles, /\.is-dragging[\s\S]*?cursor:\s*grabbing;/);
   assert.match(
     scene,
     /const gazeX = pointerActive \? pointerX : layoutFrame\.gazeX/,
@@ -1866,11 +1994,13 @@ test("keeps the optimized eye rig and textured geometry intact", async (t) => {
     };
   };
 
-  /** 在固定相机与真实透视投影下，布局姿态只转一次，指针仍只能转动双眼。 */
+  /** 在固定相机与真实透视投影下，布局、拖动和眼球各自只改变所属姿态层。 */
   const portraitStage = new THREE.Group();
   const portraitPoseGroup = new THREE.Group();
+  const portraitDragGroup = new THREE.Group();
   portraitStage.add(portraitPoseGroup);
-  portraitPoseGroup.add(displayFrame);
+  portraitPoseGroup.add(portraitDragGroup);
+  portraitDragGroup.add(displayFrame);
   const portraitCamera = new THREE.PerspectiveCamera(30, 16 / 9, 0.1, 20);
   portraitCamera.position.set(0, 0.03, 3.8);
   portraitCamera.lookAt(0, 0.02, 0);
@@ -1898,6 +2028,7 @@ test("keeps the optimized eye rig and textured geometry intact", async (t) => {
     portraitStage.position.set(layout.modelX, layout.modelY, 0);
     portraitStage.scale.setScalar(layout.scale);
     portraitPoseGroup.rotation.y = layout.modelYaw;
+    portraitDragGroup.rotation.y = 0;
     eyePairs.forEach(({ pivot }, index) =>
       pivot.quaternion.copy(baseQuaternions[index]),
     );
@@ -1942,6 +2073,7 @@ test("keeps the optimized eye rig and textured geometry intact", async (t) => {
       const pupil = meshes.at(-1);
       const portraitStageBefore = portraitStage.matrixWorld.clone();
       const portraitPoseBefore = portraitPoseGroup.matrixWorld.clone();
+      const portraitDragBefore = portraitDragGroup.matrixWorld.clone();
       const modelFrameBefore = displayFrame.matrixWorld.clone();
       const center = pupil
         .getWorldPosition(new THREE.Vector3())
@@ -1998,6 +2130,11 @@ test("keeps the optimized eye rig and textured geometry intact", async (t) => {
         1e-12,
       );
       assertVectorClose(
+        portraitDragGroup.matrixWorld.elements,
+        portraitDragBefore.elements,
+        1e-12,
+      );
+      assertVectorClose(
         displayFrame.matrixWorld.elements,
         modelFrameBefore.elements,
         1e-12,
@@ -2039,18 +2176,64 @@ test("keeps the optimized eye rig and textured geometry intact", async (t) => {
         1e-12,
       );
       assertVectorClose(
+        portraitDragGroup.matrixWorld.elements,
+        portraitDragBefore.elements,
+        1e-12,
+      );
+      assertVectorClose(
         displayFrame.matrixWorld.elements,
         modelFrameBefore.elements,
         1e-12,
       );
     }
   }
+
+  /** 真实身体网格必须围绕居中后的父级原点旋转，舞台位置与比例保持不变。 */
+  const readingLayout = desktopLayoutFrames[1];
+  const dragBodyVertex = readObservableMeshVertex(body);
+  portraitStage.position.set(readingLayout.modelX, readingLayout.modelY, 0);
+  portraitStage.scale.setScalar(readingLayout.scale);
+  portraitPoseGroup.rotation.y = readingLayout.modelYaw;
+  const stagePositionBeforeDrag = portraitStage.position.clone();
+  const stageScaleBeforeDrag = portraitStage.scale.clone();
+  const draggedBodyPositions = [
+    -MAX_PORTRAIT_DRAG_YAW,
+    0,
+    MAX_PORTRAIT_DRAG_YAW,
+  ].map((draggedYaw) => {
+    portraitDragGroup.rotation.y =
+      resolvePortraitYaw(readingLayout.modelYaw, draggedYaw) -
+      readingLayout.modelYaw;
+    portraitStage.updateWorldMatrix(true, true);
+    assertVectorClose(
+      portraitStage.position.toArray(),
+      stagePositionBeforeDrag.toArray(),
+      1e-12,
+    );
+    assertVectorClose(
+      portraitStage.scale.toArray(),
+      stageScaleBeforeDrag.toArray(),
+      1e-12,
+    );
+    assert.equal(portraitStage.rotation.x, 0);
+    assert.equal(portraitStage.rotation.y, 0);
+    assert.equal(portraitStage.rotation.z, 0);
+    assert.equal(portraitPoseGroup.rotation.y, readingLayout.modelYaw);
+    assert.equal(portraitDragGroup.rotation.x, 0);
+    assert.equal(portraitDragGroup.rotation.z, 0);
+    return readWorldVertex(body, dragBodyVertex);
+  });
+  assert.ok(draggedBodyPositions[0].distanceTo(draggedBodyPositions[1]) > 0.01);
+  assert.ok(draggedBodyPositions[1].distanceTo(draggedBodyPositions[2]) > 0.01);
+  assert.ok(draggedBodyPositions[0].distanceTo(draggedBodyPositions[2]) > 0.01);
+
   eyePairs.forEach(({ pivot }, index) =>
     pivot.quaternion.copy(baseQuaternions[index]),
   );
   portraitStage.position.set(0, 0, 0);
   portraitStage.scale.setScalar(1);
   portraitPoseGroup.rotation.y = 0;
+  portraitDragGroup.rotation.y = 0;
   portraitStage.updateWorldMatrix(true, true);
 
   const localVertices = eyePairs.map(({ meshes }) =>
