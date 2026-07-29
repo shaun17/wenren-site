@@ -4,13 +4,14 @@ import { access, readFile, stat } from "node:fs/promises";
 import test from "node:test";
 import sharp from "sharp";
 import {
-  calculateStickerAngularVelocity,
   clampStickerTranslation,
   decayStickerAngularVelocity,
-  estimateStickerPointerVelocity,
-  estimateStickerThrowVelocity,
+  isStickerClickGesture,
   mapStickerPressure,
+  readOppositeStickerRotationDirection,
   readStickerRestRotation,
+  selectStickerClickRotationSpeed,
+  STICKER_CLICK_ROTATION_SPEEDS,
 } from "../src/lib/home-sticker.ts";
 
 const stickerAssetUrl = new URL(
@@ -59,141 +60,31 @@ test("maps the pointer position to a stable pressed sticker pose", () => {
   });
 });
 
-/** 最近轨迹能给出释放速度，停住超过采样窗口后则不会误触发惯性。 */
-test("estimates only the recent pointer release velocity", () => {
-  assert.deepEqual(
-    estimateStickerPointerVelocity([
-      { x: 20, y: 40, time: 100 },
-      { x: 70, y: 20, time: 150 },
-    ]),
-    { x: 1_000, y: -400 },
-  );
-  assert.deepEqual(
-    estimateStickerPointerVelocity([
-      { x: 20, y: 40, time: 100 },
-      { x: 20, y: 40, time: 240 },
-    ]),
-    { x: 0, y: 0 },
-  );
-  assert.deepEqual(
-    estimateStickerPointerVelocity([
-      { x: 20, y: 40, time: 100 },
-      { x: 24, y: 40, time: 110 },
-    ]),
-    { x: 0, y: 0 },
-  );
+/** 六像素内视为点击，超过阈值后拖拽只移动，不再触发旋转。 */
+test("separates click rotation from drag movement", () => {
+  assert.equal(isStickerClickGesture(0), true);
+  assert.equal(isStickerClickGesture(6), true);
+  assert.equal(isStickerClickGesture(6.01), false);
+  assert.equal(isStickerClickGesture(120), false);
 });
 
-/** 极短的合并手势仍能用整体位移计算速度，慢拖和短点按不会误触发。 */
-test("falls back to the whole gesture only for a quick throw", () => {
-  assert.deepEqual(
-    estimateStickerThrowVelocity(
-      [
-        { x: 20, y: 40, time: 100 },
-        { x: 120, y: 40, time: 108 },
-      ],
-      { x: 20, y: 40, time: 100 },
-      { x: 120, y: 40, time: 108 },
-      108,
-    ),
-    { x: 6_250, y: 0 },
-  );
-  assert.deepEqual(
-    estimateStickerThrowVelocity(
-      [
-        { x: 20, y: 40, time: 100 },
-        { x: 120, y: 40, time: 700 },
-      ],
-      { x: 20, y: 40, time: 100 },
-      { x: 120, y: 40, time: 700 },
-      700,
-    ),
-    { x: 0, y: 0 },
-  );
-  assert.deepEqual(
-    estimateStickerThrowVelocity(
-      [
-        { x: 20, y: 40, time: 100 },
-        { x: 28, y: 40, time: 108 },
-      ],
-      { x: 20, y: 40, time: 100 },
-      { x: 28, y: 40, time: 108 },
-      108,
-    ),
-    { x: 0, y: 0 },
-  );
-  assert.deepEqual(
-    estimateStickerThrowVelocity(
-      [
-        { x: 20, y: 40, time: 100 },
-        { x: 120, y: 40, time: 300 },
-      ],
-      { x: 20, y: 40, time: 100 },
-      { x: 120, y: 40, time: 300 },
-      120,
-    ),
-    { x: 0, y: 0 },
-  );
+/** 点击转速来自随机速度池，并保证相邻两次绝不会选中同一档。 */
+test("selects varied random rotation speeds for consecutive clicks", () => {
+  assert.equal(selectStickerClickRotationSpeed(0, null), 720);
+  assert.equal(selectStickerClickRotationSpeed(1, null), 1_200);
+
+  const first = selectStickerClickRotationSpeed(0.5, null);
+  const repeatedRandom = selectStickerClickRotationSpeed(0.5, first);
+  assert.equal(first, 960);
+  assert.notEqual(repeatedRandom, first);
+  assert.ok(STICKER_CLICK_ROTATION_SPEEDS.includes(repeatedRandom));
+  assert.equal(selectStickerClickRotationSpeed(1, 1_200), 1_080);
 });
 
-/** 高采样率输入保留足够时间跨度，不会因单个短帧而丢失最终甩动速度。 */
-test("keeps enough high-frequency samples for release velocity", () => {
-  const samples = Array.from({ length: 21 }, (_, index) => ({
-    x: index * 2,
-    y: 0,
-    time: 100 + index,
-  }));
-  assert.deepEqual(estimateStickerPointerVelocity(samples), {
-    x: 2_000,
-    y: 0,
-  });
-});
-
-/** 快速甩动会按方向产生角速度，慢速无惯性，高速始终受安全上限约束。 */
-test("converts a quick throw into bounded angular velocity", () => {
-  const clockwise = calculateStickerAngularVelocity(
-    { x: 0, y: 1_000 },
-    { x: 50, y: 0 },
-    60,
-  );
-  const counterClockwise = calculateStickerAngularVelocity(
-    { x: 0, y: -1_000 },
-    { x: 50, y: 0 },
-    60,
-  );
-
-  assert.ok(clockwise > 600);
-  assert.ok(counterClockwise < -600);
-  assert.ok(
-    calculateStickerAngularVelocity(
-      { x: 1_500, y: -200 },
-      { x: 50, y: 0 },
-      60,
-    ) < 0,
-  );
-  assert.equal(
-    calculateStickerAngularVelocity(
-      { x: 120, y: 0 },
-      { x: 0, y: 0 },
-      60,
-    ),
-    0,
-  );
-  assert.ok(
-    calculateStickerAngularVelocity(
-      { x: 1_000, y: 0 },
-      { x: 0, y: 0 },
-      60,
-    ) > 300,
-  );
-  assert.equal(
-    calculateStickerAngularVelocity(
-      { x: 20_000, y: 0 },
-      { x: 0, y: 0 },
-      60,
-    ),
-    1_200,
-  );
+/** 点击方向严格逐次翻转，不受随机转速影响。 */
+test("alternates click rotation direction every time", () => {
+  assert.equal(readOppositeStickerRotationDirection(1), -1);
+  assert.equal(readOppositeStickerRotationDirection(-1), 1);
 });
 
 /** 惯性阻尼与帧率无关，并始终保持原旋转方向直到停止。 */
@@ -210,6 +101,10 @@ test("decays angular velocity consistently across frame rates", () => {
   assert.ok(decayStickerAngularVelocity(-900, 0.5) < 0);
   assert.equal(readStickerRestRotation(539), 360);
   assert.equal(readStickerRestRotation(721), 720);
+  assert.equal(readStickerRestRotation(410, 1), 720);
+  assert.equal(readStickerRestRotation(410, -1), 360);
+  assert.equal(readStickerRestRotation(-410, -1), -720);
+  assert.equal(readStickerRestRotation(-410, 1), -360);
 });
 
 /** 公开资产必须保留透明通道与稳定内容哈希，同时控制首屏下载体积。 */
@@ -231,8 +126,8 @@ test("ships a compact transparent sticker asset", async () => {
   );
 });
 
-/** 组件拆分位移、惯性与压感三层，并明确松手归位和快速甩动语义。 */
-test("wires release-to-home, inertia, and pointer-pressure layers", async () => {
+/** 组件拆分位移、旋转与压感三层，并明确拖拽和点击互斥语义。 */
+test("wires drag-only movement and click-only rotation", async () => {
   const [component, interaction, styles, homepage] = await Promise.all([
     readFile(
       new URL("../src/components/HomeSticker.astro", import.meta.url),
@@ -249,14 +144,23 @@ test("wires release-to-home, inertia, and pointer-pressure layers", async () => 
   assert.match(component, /data-home-sticker/);
   assert.match(component, /home-sticker-spin/);
   assert.match(component, /home-sticker-surface/);
-  assert.match(component, /拖动后松开自动归位；快速甩动会惯性旋转/);
+  assert.match(
+    component,
+    /拖动后松开自动归位；单击以随机速度旋转，方向逐次交替/,
+  );
   assert.match(component, /draggable="false"/);
   assert.match(homepage, /<HomeSticker \/>/);
-  assert.match(interaction, /estimateStickerPointerVelocity/);
-  assert.match(interaction, /calculateStickerAngularVelocity/);
+  assert.match(interaction, /selectStickerClickRotationSpeed/);
+  assert.match(interaction, /Math\.random\(\)/);
+  assert.match(interaction, /readOppositeStickerRotationDirection/);
+  assert.match(interaction, /isStickerClickGesture\(maximumPointerTravel\)/);
+  assert.match(interaction, /hasDragged = hasDragged \|\|/);
   assert.match(interaction, /requestAnimationFrame\(inertiaFrame\)/);
   assert.match(interaction, /returnTranslationHome\(\);/);
-  assert.doesNotMatch(interaction, /handleDocumentPointerDown|handleWheel/);
+  assert.doesNotMatch(
+    interaction,
+    /estimateStickerPointerVelocity|calculateStickerAngularVelocity|recordPointerSamples|handleDocumentPointerDown|handleWheel/,
+  );
   assert.match(styles, /\.home-sticker-spin/);
   assert.match(styles, /perspective\(26rem\)/);
   assert.match(styles, /outline:\s*none/);

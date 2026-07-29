@@ -12,10 +12,6 @@ export interface StickerTranslationBounds {
   maximumY: number;
 }
 
-export interface StickerPointerSample extends StickerTranslation {
-  time: number;
-}
-
 export interface StickerPressureBounds {
   left: number;
   top: number;
@@ -30,15 +26,14 @@ export interface StickerPressurePose {
   originY: number;
 }
 
+export type StickerRotationDirection = -1 | 1;
+
 const VIEWPORT_PADDING = 16;
-const POINTER_SAMPLE_WINDOW_MS = 90;
-const MIN_POINTER_SAMPLE_DURATION_MS = 16;
-const MIN_THROW_SPEED = 280;
-const MIN_THROW_DISTANCE = 18;
-const MAX_QUICK_THROW_DURATION_MS = 420;
-const MAX_RELEASE_IDLE_MS = 48;
+const CLICK_DRAG_THRESHOLD = 6;
 const MIN_ANGULAR_VELOCITY = 65;
-const MAX_ANGULAR_VELOCITY = 1_200;
+export const STICKER_CLICK_ROTATION_SPEEDS = [
+  720, 840, 960, 1_080, 1_200,
+] as const;
 const ANGULAR_DAMPING = 2.6;
 const ANGULAR_STOP_SPEED = 14;
 const MAX_INERTIA_DURATION_MS = 2_400;
@@ -94,98 +89,33 @@ export const mapStickerPressure = (
   };
 };
 
-/** 从最近一小段指针轨迹估算释放速度，停住后再松手不会沿用旧速度。 */
-export const estimateStickerPointerVelocity = (
-  samples: readonly StickerPointerSample[],
-  windowMs = POINTER_SAMPLE_WINDOW_MS,
-): StickerTranslation => {
-  const latest = samples.at(-1);
-  if (!latest) return { x: 0, y: 0 };
-
-  const earliestTime = latest.time - Math.max(1, windowMs);
-  const earliest = samples.find((sample) => sample.time >= earliestTime);
-  if (!earliest) return { x: 0, y: 0 };
-
-  const duration = latest.time - earliest.time;
-  if (duration < MIN_POINTER_SAMPLE_DURATION_MS) return { x: 0, y: 0 };
-
-  const millisecondsToSeconds = 1_000 / duration;
-  return {
-    x: (latest.x - earliest.x) * millisecondsToSeconds,
-    y: (latest.y - earliest.y) * millisecondsToSeconds,
-  };
-};
+/** 位移没有超过阈值才算点击，拖拽无论快慢都不会再触发旋转。 */
+export const isStickerClickGesture = (maximumTravel: number): boolean =>
+  Math.max(0, maximumTravel) <= CLICK_DRAG_THRESHOLD;
 
 /**
- * 优先使用最近轨迹；若设备把快速拖拽合并成极少事件，则用整次短手势兜底，
- * 避免高刷新率鼠标或自动化输入因采样间隔过短而丢失甩动力度。
+ * 从离散速度池随机选择点击转速，并排除上一次速度，
+ * 因而相邻两次点击既有随机性，也一定不会得到相同速率。
  */
-export const estimateStickerThrowVelocity = (
-  samples: readonly StickerPointerSample[],
-  gestureStart: StickerPointerSample,
-  release: StickerPointerSample,
-  lastMovementTime: number,
-): StickerTranslation => {
-  const recentVelocity = estimateStickerPointerVelocity(samples);
-  if (Math.hypot(recentVelocity.x, recentVelocity.y) >= MIN_THROW_SPEED) {
-    return recentVelocity;
-  }
-
-  const duration = release.time - gestureStart.time;
-  const distance = Math.hypot(
-    release.x - gestureStart.x,
-    release.y - gestureStart.y,
-  );
-  const releaseIdleTime = release.time - lastMovementTime;
-  if (
-    duration > MAX_QUICK_THROW_DURATION_MS ||
-    distance < MIN_THROW_DISTANCE ||
-    releaseIdleTime > MAX_RELEASE_IDLE_MS
-  ) {
-    return recentVelocity;
-  }
-
-  const safeDuration = Math.max(MIN_POINTER_SAMPLE_DURATION_MS, duration);
-  const millisecondsToSeconds = 1_000 / safeDuration;
-  return {
-    x: (release.x - gestureStart.x) * millisecondsToSeconds,
-    y: (release.y - gestureStart.y) * millisecondsToSeconds,
-  };
-};
-
-/**
- * 由释放速度和抓取点力臂计算旋转角速度；偏心甩动遵循力矩方向，
- * 接近中心或径向甩动时加入较弱的方向回退，保证快速甩动始终可感知。
- */
-export const calculateStickerAngularVelocity = (
-  velocity: StickerTranslation,
-  grabOffset: StickerTranslation,
-  radius: number,
+export const selectStickerClickRotationSpeed = (
+  randomValue: number,
+  previousSpeed: number | null,
 ): number => {
-  const speed = Math.hypot(velocity.x, velocity.y);
-  if (speed < MIN_THROW_SPEED) return 0;
-
-  const safeRadius = Math.max(1, radius);
-  const leverLength = Math.hypot(grabOffset.x, grabOffset.y);
-  const softRadius = safeRadius * 0.3;
-  const torqueRadiansPerSecond =
-    (grabOffset.x * velocity.y - grabOffset.y * velocity.x) /
-    (leverLength * leverLength + softRadius * softRadius);
-  const torqueDegreesPerSecond =
-    torqueRadiansPerSecond * (180 / Math.PI) * 0.85;
-  const directionalFallback = velocity.x * 0.42 - velocity.y * 0.14;
-  const candidate =
-    leverLength < safeRadius * 0.2
-      ? directionalFallback
-      : torqueDegreesPerSecond;
-
-  if (Math.abs(candidate) < MIN_ANGULAR_VELOCITY) return 0;
-  return clampNumber(
-    candidate,
-    -MAX_ANGULAR_VELOCITY,
-    MAX_ANGULAR_VELOCITY,
+  const candidates = STICKER_CLICK_ROTATION_SPEEDS.filter(
+    (speed) => speed !== previousSpeed,
   );
+  const normalizedRandom = clampNumber(randomValue, 0, 1);
+  const index = Math.min(
+    candidates.length - 1,
+    Math.floor(normalizedRandom * candidates.length),
+  );
+  return candidates[index] ?? STICKER_CLICK_ROTATION_SPEEDS[0];
 };
+
+/** 每次点击后翻转方向，形成严格的顺时针与逆时针交替序列。 */
+export const readOppositeStickerRotationDirection = (
+  direction: StickerRotationDirection,
+): StickerRotationDirection => (direction === 1 ? -1 : 1);
 
 /** 使用帧率无关的指数阻尼衰减角速度，快慢屏幕上的旋转手感保持一致。 */
 export const decayStickerAngularVelocity = (
@@ -194,11 +124,17 @@ export const decayStickerAngularVelocity = (
 ): number =>
   angularVelocity * Math.exp(-ANGULAR_DAMPING * Math.max(0, deltaSeconds));
 
-/** 找到距离当前角度最近的完整圈，供惯性结束后无跳变地转正。 */
-export const readStickerRestRotation = (rotation: number): number =>
-  Math.round(rotation / 360) * 360;
+/** 按指定方向找到下一完整圈；未指定方向时退回最近完整圈。 */
+export const readStickerRestRotation = (
+  rotation: number,
+  direction?: StickerRotationDirection,
+): number => {
+  if (direction === 1) return Math.ceil(rotation / 360) * 360;
+  if (direction === -1) return Math.floor(rotation / 360) * 360;
+  return Math.round(rotation / 360) * 360;
+};
 
-/** 初始化首页贴纸的拖拽归位、落点压感和甩动惯性旋转。 */
+/** 初始化首页贴纸的拖拽归位、落点压感和点击随机旋转。 */
 export const initHomeSticker = (sticker: HTMLElement): StickerCleanup => {
   if (sticker.dataset.homeStickerInitialized === "true") {
     return () => undefined;
@@ -217,8 +153,8 @@ export const initHomeSticker = (sticker: HTMLElement): StickerCleanup => {
   let rotation = 0;
   let activePointerId: number | null = null;
   let pointerOrigin: StickerTranslation = { x: 0, y: 0 };
-  let pointerStartSample: StickerPointerSample = { x: 0, y: 0, time: 0 };
-  let lastPointerMovementTime = 0;
+  let maximumPointerTravel = 0;
+  let hasDragged = false;
   let translationOrigin: StickerTranslation = { x: 0, y: 0 };
   let translationBounds: StickerTranslationBounds = {
     minimumX: 0,
@@ -226,9 +162,8 @@ export const initHomeSticker = (sticker: HTMLElement): StickerCleanup => {
     minimumY: 0,
     maximumY: 0,
   };
-  let grabOffset: StickerTranslation = { x: 0, y: 0 };
-  let stickerRadius = 1;
-  let pointerSamples: StickerPointerSample[] = [];
+  let previousClickRotationSpeed: number | null = null;
+  let nextClickRotationDirection: StickerRotationDirection = 1;
   let rotationFrame: number | null = null;
 
   /** 只把位移写给按钮外层，让松手归位不干扰内层旋转。 */
@@ -312,10 +247,10 @@ export const initHomeSticker = (sticker: HTMLElement): StickerCleanup => {
   };
 
   /** 惯性减弱后收敛到最近完整圈，再无视觉跳变地把内部数值归零。 */
-  const settleRotation = (): void => {
+  const settleRotation = (direction?: StickerRotationDirection): void => {
     cancelRotationAnimation();
     const startRotation = rotation;
-    const targetRotation = readStickerRestRotation(rotation);
+    const targetRotation = readStickerRestRotation(rotation, direction);
     if (Math.abs(targetRotation - startRotation) < 0.01) {
       rotation = 0;
       renderRotation();
@@ -354,13 +289,15 @@ export const initHomeSticker = (sticker: HTMLElement): StickerCleanup => {
   /** 按释放角速度启动多圈惯性，并用指数阻尼自然减速后转正。 */
   const startInertialRotation = (initialVelocity: number): void => {
     cancelRotationAnimation();
+    const rotationDirection: StickerRotationDirection =
+      initialVelocity < 0 ? -1 : 1;
     if (reducedMotionQuery.matches) {
       rotation = 0;
       renderRotation();
       return;
     }
     if (Math.abs(initialVelocity) < MIN_ANGULAR_VELOCITY) {
-      settleRotation();
+      settleRotation(rotationDirection);
       return;
     }
 
@@ -385,7 +322,7 @@ export const initHomeSticker = (sticker: HTMLElement): StickerCleanup => {
         now - startTime >= MAX_INERTIA_DURATION_MS;
       if (shouldStop) {
         rotationFrame = null;
-        settleRotation();
+        settleRotation(rotationDirection);
         return;
       }
 
@@ -395,7 +332,20 @@ export const initHomeSticker = (sticker: HTMLElement): StickerCleanup => {
     rotationFrame = requestAnimationFrame(inertiaFrame);
   };
 
-  /** 只结束当前指针捕获；正常 pointerup 会在随后同时启动归位与旋转。 */
+  /** 用不同随机速度启动本次点击旋转，并立即把下一次方向翻转。 */
+  const startClickRotation = (): void => {
+    const speed = selectStickerClickRotationSpeed(
+      Math.random(),
+      previousClickRotationSpeed,
+    );
+    previousClickRotationSpeed = speed;
+    startInertialRotation(speed * nextClickRotationDirection);
+    nextClickRotationDirection = readOppositeStickerRotationDirection(
+      nextClickRotationDirection,
+    );
+  };
+
+  /** 只结束当前指针捕获；pointerup 会在随后决定点击旋转或拖拽归位。 */
   const finishPointerInteraction = (): void => {
     const pointerId = activePointerId;
     activePointerId = null;
@@ -415,7 +365,6 @@ export const initHomeSticker = (sticker: HTMLElement): StickerCleanup => {
   const resetSticker = (): void => {
     finishPointerInteraction();
     cancelRotationAnimation();
-    pointerSamples = [];
     translation = { x: 0, y: 0 };
     rotation = 0;
     renderTranslation();
@@ -423,33 +372,7 @@ export const initHomeSticker = (sticker: HTMLElement): StickerCleanup => {
     clearPointerPressure();
   };
 
-  /** 保存最近 90 毫秒的合并指针样本，兼顾高刷新率鼠标与普通触控板。 */
-  const recordPointerSamples = (event: PointerEvent): void => {
-    const coalescedEvents = event.getCoalescedEvents?.() ?? [];
-    const sourceEvents = coalescedEvents.length > 0 ? coalescedEvents : [event];
-    for (const sourceEvent of sourceEvents) {
-      const previousSample = pointerSamples.at(-1);
-      if (
-        !previousSample ||
-        previousSample.x !== sourceEvent.clientX ||
-        previousSample.y !== sourceEvent.clientY
-      ) {
-        lastPointerMovementTime = sourceEvent.timeStamp;
-      }
-      pointerSamples.push({
-        x: sourceEvent.clientX,
-        y: sourceEvent.clientY,
-        time: sourceEvent.timeStamp,
-      });
-    }
-
-    const latestTime = pointerSamples.at(-1)?.time ?? event.timeStamp;
-    pointerSamples = pointerSamples
-      .filter((sample) => sample.time >= latestTime - POINTER_SAMPLE_WINDOW_MS)
-      .slice(-128);
-  };
-
-  /** 记录抓取起点并停止旧惯性；普通拖动本身不再承担旋转模式切换。 */
+  /** 记录抓取起点并停止旧惯性，后续用最大位移区分点击和拖拽。 */
   const handlePointerDown = (event: PointerEvent): void => {
     if (activePointerId !== null || event.button !== 0 || !event.isPrimary) {
       return;
@@ -457,33 +380,20 @@ export const initHomeSticker = (sticker: HTMLElement): StickerCleanup => {
 
     event.preventDefault();
     sticker.focus({ preventScroll: true });
-    cancelRotationAnimation();
     translation = readRenderedTranslation();
     renderTranslation();
     sticker.classList.add("is-dragging");
     activePointerId = event.pointerId;
     pointerOrigin = { x: event.clientX, y: event.clientY };
-    pointerStartSample = {
-      x: event.clientX,
-      y: event.clientY,
-      time: event.timeStamp,
-    };
+    maximumPointerTravel = 0;
+    hasDragged = false;
     translationOrigin = { ...translation };
     translationBounds = readTranslationBounds();
-    const bounds = sticker.getBoundingClientRect();
-    grabOffset = {
-      x: event.clientX - (bounds.left + bounds.width / 2),
-      y: event.clientY - (bounds.top + bounds.height / 2),
-    };
-    stickerRadius = Math.max(1, Math.min(bounds.width, bounds.height) / 2);
-    pointerSamples = [];
-    lastPointerMovementTime = event.timeStamp;
-    recordPointerSamples(event);
     renderPointerPressure(event);
     sticker.setPointerCapture(event.pointerId);
   };
 
-  /** 拖拽时只更新位移与短时速度样本，悬浮时则只更新鼠标落点压感。 */
+  /** 拖拽时只更新位移与最大行程，悬浮时则只更新鼠标落点压感。 */
   const handlePointerMove = (event: PointerEvent): void => {
     if (event.pointerId !== activePointerId) {
       renderPointerPressure(event);
@@ -491,7 +401,18 @@ export const initHomeSticker = (sticker: HTMLElement): StickerCleanup => {
     }
 
     event.preventDefault();
-    recordPointerSamples(event);
+    maximumPointerTravel = Math.max(
+      maximumPointerTravel,
+      Math.hypot(
+        event.clientX - pointerOrigin.x,
+        event.clientY - pointerOrigin.y,
+      ),
+    );
+    hasDragged = hasDragged || !isStickerClickGesture(maximumPointerTravel);
+    if (!hasDragged) {
+      renderPointerPressure(event);
+      return;
+    }
     translation = clampStickerTranslation(
       {
         x: translationOrigin.x + event.clientX - pointerOrigin.x,
@@ -513,31 +434,23 @@ export const initHomeSticker = (sticker: HTMLElement): StickerCleanup => {
     if (activePointerId === null) clearPointerPressure();
   };
 
-  /** 松手同一时刻启动位置归位和甩动旋转，不再等待按钮失焦。 */
+  /** 松手后拖拽只归位；只有未超过阈值的单击才启动随机交替旋转。 */
   const handlePointerUp = (event: PointerEvent): void => {
     if (event.pointerId !== activePointerId) return;
 
-    recordPointerSamples(event);
-    const releaseSample: StickerPointerSample = {
-      x: event.clientX,
-      y: event.clientY,
-      time: event.timeStamp,
-    };
-    const velocity = estimateStickerThrowVelocity(
-      pointerSamples,
-      pointerStartSample,
-      releaseSample,
-      lastPointerMovementTime,
+    maximumPointerTravel = Math.max(
+      maximumPointerTravel,
+      Math.hypot(
+        event.clientX - pointerOrigin.x,
+        event.clientY - pointerOrigin.y,
+      ),
     );
-    const angularVelocity = calculateStickerAngularVelocity(
-      velocity,
-      grabOffset,
-      stickerRadius,
-    );
+    hasDragged = hasDragged || !isStickerClickGesture(maximumPointerTravel);
+    const shouldRotate = !hasDragged;
     finishPointerInteraction();
     returnTranslationHome();
     clearPointerPressure();
-    startInertialRotation(angularVelocity);
+    if (shouldRotate) startClickRotation();
   };
 
   /** 系统取消手势时不制造虚假惯性，直接安全归位。 */
@@ -550,7 +463,7 @@ export const initHomeSticker = (sticker: HTMLElement): StickerCleanup => {
     if (event.pointerId === activePointerId) resetSticker();
   };
 
-  /** 键盘左右键提供等价的惯性旋转，激活键顺时针甩动，Escape 立即归位。 */
+  /** 键盘激活键复用点击旋转序列，Escape 立即归位。 */
   const handleKeyDown = (event: KeyboardEvent): void => {
     if (event.key === "Escape") {
       event.preventDefault();
@@ -558,10 +471,9 @@ export const initHomeSticker = (sticker: HTMLElement): StickerCleanup => {
       return;
     }
 
-    if (["ArrowLeft", "ArrowRight", "Enter", " "].includes(event.key)) {
+    if (["Enter", " "].includes(event.key)) {
       event.preventDefault();
-      const direction = event.key === "ArrowLeft" ? -1 : 1;
-      startInertialRotation(direction * 540);
+      startClickRotation();
     }
   };
 
