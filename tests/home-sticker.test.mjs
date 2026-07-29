@@ -8,8 +8,8 @@ import {
   decayStickerAngularVelocity,
   isStickerClickGesture,
   mapStickerPressure,
+  normalizeStickerRotation,
   readOppositeStickerRotationDirection,
-  readStickerRestRotation,
   selectStickerClickRotationSpeed,
   STICKER_CLICK_ROTATION_SPEEDS,
 } from "../src/lib/home-sticker.ts";
@@ -37,27 +37,38 @@ test("keeps sticker translation inside the visible viewport bounds", () => {
   );
 });
 
-/** 鼠标所在边向下、反方向成为支点，中心落点则保持水平。 */
+/** 鼠标所在边远离变小、对侧靠近变大，旋转后仍按屏幕落点正确换算。 */
 test("maps the pointer position to a stable pressed sticker pose", () => {
   const bounds = { left: 100, top: 50, width: 120, height: 120 };
   assert.deepEqual(mapStickerPressure({ x: 160, y: 110 }, bounds), {
-    tiltX: -0,
+    tiltX: 0,
     tiltY: 0,
-    originX: 50,
-    originY: 50,
   });
-  assert.deepEqual(mapStickerPressure({ x: 220, y: 50 }, bounds), {
-    tiltX: 6,
-    tiltY: 6,
-    originX: 14,
-    originY: 86,
+  assert.deepEqual(mapStickerPressure({ x: 220, y: 110 }, bounds), {
+    tiltX: 0,
+    tiltY: 4,
   });
-  assert.deepEqual(mapStickerPressure({ x: 100, y: 170 }, bounds), {
-    tiltX: -6,
-    tiltY: -6,
-    originX: 86,
-    originY: 14,
+  assert.deepEqual(mapStickerPressure({ x: 100, y: 110 }, bounds), {
+    tiltX: 0,
+    tiltY: -4,
   });
+  assert.deepEqual(mapStickerPressure({ x: 160, y: 50 }, bounds), {
+    tiltX: 4,
+    tiltY: 0,
+  });
+  assert.deepEqual(mapStickerPressure({ x: 160, y: 170 }, bounds), {
+    tiltX: -4,
+    tiltY: 0,
+  });
+
+  const cornerPose = mapStickerPressure({ x: 220, y: 50 }, bounds);
+  assert.ok(Math.abs(cornerPose.tiltX - Math.SQRT2 * 2) < 0.000_001);
+  assert.ok(Math.abs(cornerPose.tiltY - Math.SQRT2 * 2) < 0.000_001);
+  assert.ok(Math.hypot(cornerPose.tiltX, cornerPose.tiltY) <= 4);
+
+  const rotatedPose = mapStickerPressure({ x: 220, y: 110 }, bounds, 90);
+  assert.ok(Math.abs(rotatedPose.tiltX - 4) < 0.000_001);
+  assert.ok(Math.abs(rotatedPose.tiltY) < 0.000_001);
 });
 
 /** 六像素内视为点击，超过阈值后拖拽只移动，不再触发旋转。 */
@@ -99,12 +110,9 @@ test("decays angular velocity consistently across frame rates", () => {
   assert.ok(oneStep < 900);
   assert.ok(Math.abs(oneStep - sixtySteps) < 0.000_001);
   assert.ok(decayStickerAngularVelocity(-900, 0.5) < 0);
-  assert.equal(readStickerRestRotation(539), 360);
-  assert.equal(readStickerRestRotation(721), 720);
-  assert.equal(readStickerRestRotation(410, 1), 720);
-  assert.equal(readStickerRestRotation(410, -1), 360);
-  assert.equal(readStickerRestRotation(-410, -1), -720);
-  assert.equal(readStickerRestRotation(-410, 1), -360);
+  assert.equal(normalizeStickerRotation(725), 5);
+  assert.equal(normalizeStickerRotation(-725), -5);
+  assert.equal(normalizeStickerRotation(360), 0);
 });
 
 /** 公开资产必须保留透明通道与稳定内容哈希，同时控制首屏下载体积。 */
@@ -146,7 +154,7 @@ test("wires drag-only movement and click-only rotation", async () => {
   assert.match(component, /home-sticker-surface/);
   assert.match(
     component,
-    /拖动后松开自动归位；单击以随机速度旋转，方向逐次交替/,
+    /拖动后松开只归位位置并保留角度；单击以随机速度旋转，方向逐次交替/,
   );
   assert.match(component, /draggable="false"/);
   assert.match(homepage, /<HomeSticker \/>/);
@@ -157,15 +165,25 @@ test("wires drag-only movement and click-only rotation", async () => {
   assert.match(interaction, /hasDragged = hasDragged \|\|/);
   assert.match(interaction, /requestAnimationFrame\(inertiaFrame\)/);
   assert.match(interaction, /returnTranslationHome\(\);/);
+  assert.match(interaction, /stopRotationPreservingAngle/);
   assert.doesNotMatch(
     interaction,
-    /estimateStickerPointerVelocity|calculateStickerAngularVelocity|recordPointerSamples|handleDocumentPointerDown|handleWheel/,
+    /estimateStickerPointerVelocity|calculateStickerAngularVelocity|recordPointerSamples|handleDocumentPointerDown|handleWheel|settleRotation|readStickerRestRotation/,
   );
   assert.match(styles, /\.home-sticker-spin/);
-  assert.match(styles, /perspective\(26rem\)/);
+  assert.match(styles, /perspective\(24rem\)/);
+  assert.match(styles, /transform-origin:\s*center/);
+  assert.match(styles, /\.home-sticker-spin::before[\s\S]*pointer-events:\s*auto/);
+  assert.match(
+    styles,
+    /\.home-sticker\.is-spinning\.is-pointer-over \.home-sticker-surface[\s\S]*transition-duration:\s*0ms, 140ms/,
+  );
   assert.match(styles, /outline:\s*none/);
   assert.match(styles, /touch-action:\s*none/);
-  assert.doesNotMatch(styles, /home-sticker-seesaw|infinite/);
+  assert.doesNotMatch(
+    styles,
+    /home-sticker-seesaw|infinite|scale\(|translateZ\(\s*-/,
+  );
 });
 
 /** 最终静态产物只在首页加载贴纸，内页不会承担无关装饰与交互脚本。 */

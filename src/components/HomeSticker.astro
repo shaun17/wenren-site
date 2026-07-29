@@ -3,7 +3,7 @@ import "../styles/home-sticker.css";
 
 const stickerAsset = "/stickers/mcdonald-logo-sticker-705aee4ab869.png";
 const stickerInstructions =
-  "拖动后松开自动归位；单击以随机速度旋转，方向逐次交替";
+  "拖动后松开只归位位置并保留角度；单击以随机速度旋转，方向逐次交替";
 ---
 
 <div class="home-sticker-anchor">
@@ -33,7 +33,7 @@ const stickerInstructions =
 <script>
   import { initHomeSticker } from "../lib/home-sticker";
 
-  /** 初始化首页唯一贴纸的拖拽归位、落点压感与点击随机旋转。 */
+  /** 初始化首页唯一贴纸的位置归位、局部压感与保留角度的点击旋转。 */
   const initializeHomeSticker = (): void => {
     const sticker = document.querySelector<HTMLElement>("[data-home-sticker]");
     if (sticker) initHomeSticker(sticker);

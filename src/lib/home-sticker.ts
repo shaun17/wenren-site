@@ -22,8 +22,6 @@ export interface StickerPressureBounds {
 export interface StickerPressurePose {
   tiltX: number;
   tiltY: number;
-  originX: number;
-  originY: number;
 }
 
 export type StickerRotationDirection = -1 | 1;
@@ -37,9 +35,7 @@ export const STICKER_CLICK_ROTATION_SPEEDS = [
 const ANGULAR_DAMPING = 2.6;
 const ANGULAR_STOP_SPEED = 14;
 const MAX_INERTIA_DURATION_MS = 2_400;
-const ROTATION_SETTLE_DURATION_MS = 380;
-const PRESS_MAX_TILT = 6;
-const PRESS_ORIGIN_SHIFT = 36;
+const PRESS_MAX_TILT = 4;
 
 /** 将数值限制在指定闭区间，供所有指针物理计算复用。 */
 const clampNumber = (value: number, minimum: number, maximum: number): number =>
@@ -61,12 +57,13 @@ export const clampStickerTranslation = (
 };
 
 /**
- * 把鼠标落点映射为静态 3D 压感：落点一侧向下，支点移到反方向，
- * 因而鼠标停住时画面也会稳定停住，不再循环摆动。
+ * 把屏幕中的鼠标落点反向旋转到贴纸局部坐标，再映射为静态 3D 压感。
+ * 倾斜总量采用径向上限，角落不会叠加成夸张折角；中心支点让落点侧缩小、对侧放大。
  */
 export const mapStickerPressure = (
   pointer: StickerTranslation,
   bounds: StickerPressureBounds,
+  rotationDegrees = 0,
 ): StickerPressurePose => {
   const width = Math.max(1, bounds.width);
   const height = Math.max(1, bounds.height);
@@ -81,11 +78,24 @@ export const mapStickerPressure = (
     1,
   );
 
+  const rotationRadians = (rotationDegrees * Math.PI) / 180;
+  const rotationCosine = Math.cos(rotationRadians);
+  const rotationSine = Math.sin(rotationRadians);
+  const localX =
+    normalizedX * rotationCosine + normalizedY * rotationSine;
+  const localY =
+    -normalizedX * rotationSine + normalizedY * rotationCosine;
+  const localLength = Math.hypot(localX, localY);
+  if (localLength < Number.EPSILON) return { tiltX: 0, tiltY: 0 };
+
+  const pressureStrength = Math.min(1, localLength);
+  const tiltStrength = PRESS_MAX_TILT * pressureStrength;
+  const tiltX = (-localY / localLength) * tiltStrength;
+  const tiltY = (localX / localLength) * tiltStrength;
+
   return {
-    tiltX: -normalizedY * PRESS_MAX_TILT,
-    tiltY: normalizedX * PRESS_MAX_TILT,
-    originX: 50 - normalizedX * PRESS_ORIGIN_SHIFT,
-    originY: 50 - normalizedY * PRESS_ORIGIN_SHIFT,
+    tiltX: Math.abs(tiltX) < Number.EPSILON ? 0 : tiltX,
+    tiltY: Math.abs(tiltY) < Number.EPSILON ? 0 : tiltY,
   };
 };
 
@@ -124,14 +134,10 @@ export const decayStickerAngularVelocity = (
 ): number =>
   angularVelocity * Math.exp(-ANGULAR_DAMPING * Math.max(0, deltaSeconds));
 
-/** 按指定方向找到下一完整圈；未指定方向时退回最近完整圈。 */
-export const readStickerRestRotation = (
-  rotation: number,
-  direction?: StickerRotationDirection,
-): number => {
-  if (direction === 1) return Math.ceil(rotation / 360) * 360;
-  if (direction === -1) return Math.floor(rotation / 360) * 360;
-  return Math.round(rotation / 360) * 360;
+/** 把累计角度压回一个视觉等价的单圈数值，避免长期点击后数值无限增长。 */
+export const normalizeStickerRotation = (rotation: number): number => {
+  const normalizedRotation = rotation % 360;
+  return Math.abs(normalizedRotation) < 0.0005 ? 0 : normalizedRotation;
 };
 
 /** 初始化首页贴纸的拖拽归位、落点压感和点击随机旋转。 */
@@ -165,6 +171,7 @@ export const initHomeSticker = (sticker: HTMLElement): StickerCleanup => {
   let previousClickRotationSpeed: number | null = null;
   let nextClickRotationDirection: StickerRotationDirection = 1;
   let rotationFrame: number | null = null;
+  let pressurePointer: StickerTranslation | null = null;
 
   /** 只把位移写给按钮外层，让松手归位不干扰内层旋转。 */
   const renderTranslation = (): void => {
@@ -172,23 +179,11 @@ export const initHomeSticker = (sticker: HTMLElement): StickerCleanup => {
     sticker.style.setProperty("--sticker-y", `${translation.y.toFixed(2)}px`);
   };
 
-  /** 只把累计角度写给旋转层，惯性期间允许连续跨越多个完整圈。 */
-  const renderRotation = (): void => {
-    sticker.style.setProperty(
-      "--sticker-rotation",
-      `${rotation.toFixed(3)}deg`,
-    );
-  };
-
-  /** 把当前鼠标落点写成固定压感姿态，鼠标不动时数值也不再变化。 */
-  const renderPointerPressure = (event: PointerEvent): void => {
-    if (!precisePointerQuery.matches && event.pointerType !== "mouse") return;
-
+  /** 按当前保留角度重算屏幕落点，旋转后鼠标压下的位置仍与视觉方向一致。 */
+  const renderStoredPointerPressure = (): void => {
+    if (!pressurePointer) return;
     const bounds = sticker.getBoundingClientRect();
-    const pose = mapStickerPressure(
-      { x: event.clientX, y: event.clientY },
-      bounds,
-    );
+    const pose = mapStickerPressure(pressurePointer, bounds, rotation);
     sticker.style.setProperty(
       "--sticker-tilt-x",
       `${pose.tiltX.toFixed(2)}deg`,
@@ -197,24 +192,32 @@ export const initHomeSticker = (sticker: HTMLElement): StickerCleanup => {
       "--sticker-tilt-y",
       `${pose.tiltY.toFixed(2)}deg`,
     );
-    sticker.style.setProperty(
-      "--sticker-origin-x",
-      `${pose.originX.toFixed(2)}%`,
-    );
-    sticker.style.setProperty(
-      "--sticker-origin-y",
-      `${pose.originY.toFixed(2)}%`,
-    );
     sticker.classList.add("is-pointer-over");
+  };
+
+  /** 只把累计角度写给旋转层，并同步校正仍停留在贴纸上的鼠标压感。 */
+  const renderRotation = (): void => {
+    sticker.style.setProperty(
+      "--sticker-rotation",
+      `${rotation.toFixed(3)}deg`,
+    );
+    renderStoredPointerPressure();
+  };
+
+  /** 保存当前屏幕落点；鼠标不动时姿态稳定，旋转时则只校正局部坐标。 */
+  const renderPointerPressure = (event: PointerEvent): void => {
+    if (!precisePointerQuery.matches && event.pointerType !== "mouse") return;
+
+    pressurePointer = { x: event.clientX, y: event.clientY };
+    renderStoredPointerPressure();
   };
 
   /** 清除压感姿态，并让贴纸表面短暂平滑回到水平状态。 */
   const clearPointerPressure = (): void => {
+    pressurePointer = null;
     sticker.classList.remove("is-pointer-over");
     sticker.style.setProperty("--sticker-tilt-x", "0deg");
     sticker.style.setProperty("--sticker-tilt-y", "0deg");
-    sticker.style.setProperty("--sticker-origin-x", "50%");
-    sticker.style.setProperty("--sticker-origin-y", "50%");
   };
 
   /** 读取 CSS 归位过渡中的真实位置，快速二次抓取时不会突然跳回目标值。 */
@@ -239,65 +242,26 @@ export const initHomeSticker = (sticker: HTMLElement): StickerCleanup => {
     };
   };
 
-  /** 停止当前旋转帧，但保留画面上的累计角度供下一次抓取继续。 */
-  const cancelRotationAnimation = (): void => {
+  /** 停止当前旋转并保留画面角度；只做视觉等价的单圈规范化，绝不回正。 */
+  const stopRotationPreservingAngle = (): void => {
     if (rotationFrame !== null) cancelAnimationFrame(rotationFrame);
     rotationFrame = null;
     sticker.classList.remove("is-spinning");
+    rotation = normalizeStickerRotation(rotation);
+    renderRotation();
   };
 
-  /** 惯性减弱后收敛到最近完整圈，再无视觉跳变地把内部数值归零。 */
-  const settleRotation = (direction?: StickerRotationDirection): void => {
-    cancelRotationAnimation();
-    const startRotation = rotation;
-    const targetRotation = readStickerRestRotation(rotation, direction);
-    if (Math.abs(targetRotation - startRotation) < 0.01) {
-      rotation = 0;
-      renderRotation();
-      return;
-    }
-
-    const startTime = performance.now();
-    sticker.classList.add("is-spinning");
-
-    /** 用三次缓出完成最后转正，整个过程仍由独立旋转层承担。 */
-    const settleFrame = (now: number): void => {
-      const progress = clampNumber(
-        (now - startTime) / ROTATION_SETTLE_DURATION_MS,
-        0,
-        1,
-      );
-      const easedProgress = 1 - Math.pow(1 - progress, 3);
-      rotation =
-        startRotation + (targetRotation - startRotation) * easedProgress;
-      renderRotation();
-
-      if (progress < 1) {
-        rotationFrame = requestAnimationFrame(settleFrame);
-        return;
-      }
-
-      rotationFrame = null;
-      rotation = 0;
-      renderRotation();
-      sticker.classList.remove("is-spinning");
-    };
-
-    rotationFrame = requestAnimationFrame(settleFrame);
-  };
-
-  /** 按释放角速度启动多圈惯性，并用指数阻尼自然减速后转正。 */
+  /** 按点击角速度启动惯性；阻尼结束后停在当时角度，不再补整圈或回正。 */
   const startInertialRotation = (initialVelocity: number): void => {
-    cancelRotationAnimation();
-    const rotationDirection: StickerRotationDirection =
-      initialVelocity < 0 ? -1 : 1;
+    stopRotationPreservingAngle();
     if (reducedMotionQuery.matches) {
-      rotation = 0;
+      rotation = normalizeStickerRotation(
+        rotation + initialVelocity / ANGULAR_DAMPING,
+      );
       renderRotation();
       return;
     }
     if (Math.abs(initialVelocity) < MIN_ANGULAR_VELOCITY) {
-      settleRotation(rotationDirection);
       return;
     }
 
@@ -321,8 +285,7 @@ export const initHomeSticker = (sticker: HTMLElement): StickerCleanup => {
         Math.abs(angularVelocity) < ANGULAR_STOP_SPEED ||
         now - startTime >= MAX_INERTIA_DURATION_MS;
       if (shouldStop) {
-        rotationFrame = null;
-        settleRotation(rotationDirection);
+        stopRotationPreservingAngle();
         return;
       }
 
@@ -361,14 +324,12 @@ export const initHomeSticker = (sticker: HTMLElement): StickerCleanup => {
     renderTranslation();
   };
 
-  /** 异常中断时取消所有动画并完整归位，避免留下半完成状态。 */
-  const resetSticker = (): void => {
+  /** 中断交互时只归位位置并停住旋转，已经形成的视觉角度始终保留。 */
+  const stopMotionAndReturnHome = (): void => {
     finishPointerInteraction();
-    cancelRotationAnimation();
+    stopRotationPreservingAngle();
     translation = { x: 0, y: 0 };
-    rotation = 0;
     renderTranslation();
-    renderRotation();
     clearPointerPressure();
   };
 
@@ -380,6 +341,7 @@ export const initHomeSticker = (sticker: HTMLElement): StickerCleanup => {
 
     event.preventDefault();
     sticker.focus({ preventScroll: true });
+    stopRotationPreservingAngle();
     translation = readRenderedTranslation();
     renderTranslation();
     sticker.classList.add("is-dragging");
@@ -449,25 +411,29 @@ export const initHomeSticker = (sticker: HTMLElement): StickerCleanup => {
     const shouldRotate = !hasDragged;
     finishPointerInteraction();
     returnTranslationHome();
-    clearPointerPressure();
-    if (shouldRotate) startClickRotation();
+    if (shouldRotate) {
+      renderPointerPressure(event);
+      startClickRotation();
+    } else {
+      clearPointerPressure();
+    }
   };
 
   /** 系统取消手势时不制造虚假惯性，直接安全归位。 */
   const handlePointerCancel = (event: PointerEvent): void => {
-    if (event.pointerId === activePointerId) resetSticker();
+    if (event.pointerId === activePointerId) stopMotionAndReturnHome();
   };
 
   /** 捕获被浏览器意外夺走时执行兜底归位，正常释放因编号已清空不会重复处理。 */
   const handleLostPointerCapture = (event: PointerEvent): void => {
-    if (event.pointerId === activePointerId) resetSticker();
+    if (event.pointerId === activePointerId) stopMotionAndReturnHome();
   };
 
-  /** 键盘激活键复用点击旋转序列，Escape 立即归位。 */
+  /** 键盘激活键复用点击旋转序列，Escape 停住运动但保留角度。 */
   const handleKeyDown = (event: KeyboardEvent): void => {
     if (event.key === "Escape") {
       event.preventDefault();
-      resetSticker();
+      stopMotionAndReturnHome();
       return;
     }
 
@@ -477,27 +443,25 @@ export const initHomeSticker = (sticker: HTMLElement): StickerCleanup => {
     }
   };
 
-  /** 视口或动态偏好变化会终止旧坐标系中的动画并回到稳定锚点。 */
-  const handleEnvironmentChange = (): void => resetSticker();
+  /** 视口或动态偏好变化会停住运动并归位位置，但不改变已经形成的角度。 */
+  const handleEnvironmentChange = (): void => stopMotionAndReturnHome();
 
   /** 页面进入后台时同步归位，重新显示时不会继续过期的惯性帧。 */
   const handleVisibilityChange = (): void => {
-    if (document.hidden) resetSticker();
+    if (document.hidden) stopMotionAndReturnHome();
   };
 
   /** 幂等移除所有监听器和动画，并恢复服务端渲染时的初始样式。 */
   const cleanup = (): void => {
     abortController.abort();
     finishPointerInteraction();
-    cancelRotationAnimation();
+    stopRotationPreservingAngle();
     for (const property of [
       "--sticker-x",
       "--sticker-y",
       "--sticker-rotation",
       "--sticker-tilt-x",
       "--sticker-tilt-y",
-      "--sticker-origin-x",
-      "--sticker-origin-y",
     ]) {
       sticker.style.removeProperty(property);
     }

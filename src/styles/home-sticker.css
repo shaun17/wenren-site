@@ -16,8 +16,6 @@
   --sticker-rotation: 0deg;
   --sticker-tilt-x: 0deg;
   --sticker-tilt-y: 0deg;
-  --sticker-origin-x: 50%;
-  --sticker-origin-y: 50%;
   position: absolute;
   inset: 0;
   width: 100%;
@@ -59,32 +57,46 @@
 }
 
 .home-sticker-spin {
+  position: relative;
   pointer-events: none;
   transform: rotate(var(--sticker-rotation));
   transform-origin: center;
   will-change: transform;
 }
 
-/* 表面层只响应鼠标落点；落点压下、反方向支撑边翘起，停住后不再运动。 */
+/* 旋转后的可见边角可能超出按钮原方框；透明命中层跟随角度，保证这些边角仍可拖动与悬浮。 */
+.home-sticker-spin::before {
+  position: absolute;
+  inset: 8%;
+  border-radius: 26%;
+  content: "";
+  pointer-events: auto;
+}
+
+/* 以中心为支点做轻微透视：鼠标侧远离变小，对侧靠近变大，不缩放整张贴纸。 */
 .home-sticker-surface {
   pointer-events: none;
   filter: drop-shadow(0 0.42rem 0.6rem rgba(17, 17, 17, 0.16));
-  transform: perspective(26rem) translateZ(0) rotateX(var(--sticker-tilt-x))
-    rotateY(var(--sticker-tilt-y)) scale(1);
-  transform-origin: var(--sticker-origin-x) var(--sticker-origin-y);
+  transform: perspective(24rem) rotateX(var(--sticker-tilt-x))
+    rotateY(var(--sticker-tilt-y));
+  transform-origin: center;
   transform-style: preserve-3d;
   backface-visibility: hidden;
   transition:
-    transform 110ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 200ms cubic-bezier(0.16, 1, 0.3, 1),
     filter 160ms ease-out;
   will-change: transform;
 }
 
 .home-sticker.is-pointer-over .home-sticker-surface,
 .home-sticker.is-dragging .home-sticker-surface {
-  filter: drop-shadow(0 0.58rem 0.74rem rgba(17, 17, 17, 0.2));
-  transform: perspective(26rem) translateZ(-0.14rem)
-    rotateX(var(--sticker-tilt-x)) rotateY(var(--sticker-tilt-y)) scale(0.988);
+  filter: drop-shadow(0 0.46rem 0.64rem rgba(17, 17, 17, 0.18));
+  transition-duration: 90ms, 140ms;
+}
+
+/* 高速旋转且仍悬浮时逐帧同步压感；鼠标移出后恢复 200ms 的自然回平。 */
+.home-sticker.is-spinning.is-pointer-over .home-sticker-surface {
+  transition-duration: 0ms, 140ms;
 }
 
 /* 键盘焦点只增强贴纸自身光晕，不再绘制黑色矩形边框。 */
