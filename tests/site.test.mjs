@@ -63,7 +63,7 @@ const extractDirectoryColumn = (html, category) =>
 /** 提取一列中真实文章的链接与标题，不把最终的“更多”混入内容快照。 */
 const extractDirectoryEntries = (column) =>
   [...column.matchAll(
-    /<li data-directory-entry><a href="([^"]+)">([^<]+)<\/a><\/li>/g,
+    /<li data-directory-entry><a href="([^"]+)"><span class="directory-link-title">([^<]+)<\/span><\/a><\/li>/g,
   )].map((match) => ({ href: match[1], title: match[2] }));
 
 /** 把不同页面的同一分类归一为可比较快照，忽略 h2/h3 的语义层级差异。 */
@@ -247,6 +247,21 @@ test("builds consistent four-column directory previews on the homepage", async (
     findAnchor(worksColumn, "/works/release-tracker/"),
     undefined,
     "第五篇作品必须留在分类页，不能进入首页四篇预览",
+  );
+
+  const writingColumn = extractDirectoryColumn(html, "writing");
+  assert.deepEqual(extractDirectoryEntries(writingColumn), [
+    {
+      href: "/writing/writing-with-notion/",
+      title: longArticleTitle,
+    },
+  ]);
+  assert.match(
+    writingColumn,
+    new RegExp(
+      `<span class="directory-link-title">${longArticleTitle}<\\/span>`,
+    ),
+    "长标题应完整保留在最终 HTML，只由 CSS 显示省略号",
   );
 
   const journalColumn = extractDirectoryColumn(html, "journal");
