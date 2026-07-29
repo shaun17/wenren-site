@@ -16,7 +16,11 @@ import {
   createPortraitLightRig,
   createPortraitLayoutFrames,
   mapPointerToGaze,
+  MAX_EYE_PITCH,
+  MAX_EYE_YAW,
   MAX_PORTRAIT_DRAG_YAW,
+  POINTER_GAZE_RADIUS_X_RATIO,
+  POINTER_GAZE_RADIUS_Y_RATIO,
   PORTRAIT_ENVIRONMENT_INTENSITY,
   PORTRAIT_TONE_MAPPING_EXPOSURE,
   readPortraitDragYaw,
@@ -249,6 +253,12 @@ test("transitions once from the centered close-up to the stable reading layout",
     "桌面阅读态必须只向右轻转 5 至 12 度",
   );
   assert.ok(desktop[1].gazeX > 0, "桌面阅读态目光必须配合身体看向右栏");
+  assert.ok(
+    Math.abs(
+      desktop[1].gazeX * MAX_EYE_YAW - THREE.MathUtils.degToRad(5.25),
+    ) < 1e-10,
+    "扩大活动范围后必须保持阅读态原有的默认右视角",
+  );
   assert.equal(compact[0].modelX, 0, "移动端首屏近景必须水平居中");
   assert.equal(compact[1].modelX, 0, "移动端阅读态必须继续保持水平居中");
   assert.equal(compact[0].modelYaw, 0, "移动端首屏必须保持正面朝向");
@@ -649,11 +659,26 @@ test("maps the pointer onto the rig axes and projected eye center", () => {
   const target = new THREE.Quaternion();
   const yaw = new THREE.Quaternion().setFromAxisAngle(
     new THREE.Vector3(0, 0, -1),
-    THREE.MathUtils.degToRad(22),
+    MAX_EYE_YAW,
   );
   const pitch = new THREE.Quaternion().setFromAxisAngle(
     new THREE.Vector3(1, 0, 0),
-    THREE.MathUtils.degToRad(13),
+    MAX_EYE_PITCH,
+  );
+
+  assert.equal(MAX_EYE_YAW, THREE.MathUtils.degToRad(25));
+  assert.equal(MAX_EYE_PITCH, THREE.MathUtils.degToRad(15));
+  assert.equal(POINTER_GAZE_RADIUS_X_RATIO, 0.5);
+  assert.equal(POINTER_GAZE_RADIUS_Y_RATIO, 0.52);
+  assert.ok(
+    MAX_EYE_YAW / POINTER_GAZE_RADIUS_X_RATIO >
+      (THREE.MathUtils.degToRad(22) / 0.56) * 1.2,
+    "相同水平指针位移下的目光活动必须至少增加 20%",
+  );
+  assert.ok(
+    MAX_EYE_PITCH / POINTER_GAZE_RADIUS_Y_RATIO >
+      (THREE.MathUtils.degToRad(13) / 0.56) * 1.2,
+    "相同垂直指针位移下的目光活动必须至少增加 20%",
   );
 
   assert.equal(setEyeTargetQuaternion(base, target, 1, 0), target);
@@ -665,6 +690,17 @@ test("maps the pointer onto the rig axes and projected eye center", () => {
   const reversedCombined = base.clone().multiply(pitch.clone().multiply(yaw));
   assert.ok(target.angleTo(expectedCombined) < 1e-7);
   assert.ok(target.angleTo(reversedCombined) > 1e-4, "yaw 必须先于 pitch 组合");
+
+  setEyeTargetQuaternion(base, target, -1, 0);
+  assert.ok(
+    target.angleTo(base.clone().multiply(yaw.clone().invert())) < 1e-7,
+    "向左必须与向右保持对称极限",
+  );
+  setEyeTargetQuaternion(base, target, 0, -1);
+  assert.ok(
+    target.angleTo(base.clone().multiply(pitch.clone().invert())) < 1e-7,
+    "向上必须与向下保持对称极限",
+  );
 
   const displayRotation = new THREE.Quaternion().setFromAxisAngle(
     new THREE.Vector3(0, 1, 0),

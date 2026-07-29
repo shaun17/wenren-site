@@ -73,8 +73,11 @@ const EYE_RIG_CONTRACTS: readonly EyeRigContract[] = [
     ],
   },
 ] as const;
-const MAX_EYE_YAW = THREE.MathUtils.degToRad(22);
-const MAX_EYE_PITCH = THREE.MathUtils.degToRad(13);
+// 适度扩大眼球极限并缩短满幅距离，让目光更明显，同时保留眼眶遮挡余量。
+export const MAX_EYE_YAW = THREE.MathUtils.degToRad(25);
+export const MAX_EYE_PITCH = THREE.MathUtils.degToRad(15);
+export const POINTER_GAZE_RADIUS_X_RATIO = 0.5;
+export const POINTER_GAZE_RADIUS_Y_RATIO = 0.52;
 const AVATAR_TARGET_EXTENT = 1.9;
 // 新模型的局部 +Y 朝向相机，-Z 与 +X 分别对应画面水平和垂直转动轴。
 const EYE_YAW_AXIS = new THREE.Vector3(0, 0, -1);
@@ -239,7 +242,8 @@ export const createPortraitLayoutFrames = (
           scale: 1.48,
         },
         {
-          gazeX: 0.24,
+          // 25° × 0.21 ≈ 5.25°，保持调整前阅读态的默认右视角。
+          gazeX: 0.21,
           modelX: -0.7,
           modelY: -0.12,
           modelYaw: THREE.MathUtils.degToRad(8),
@@ -547,8 +551,14 @@ export const initSpatialAvatarScene = (
     canvasScreenRect.top = bounds.top;
     canvasScreenRect.width = Math.max(1, bounds.width);
     canvasScreenRect.height = Math.max(1, bounds.height);
-    pointerGazeRegion.radiusX = Math.max(1, bounds.width * 0.56);
-    pointerGazeRegion.radiusY = Math.max(1, bounds.height * 0.56);
+    pointerGazeRegion.radiusX = Math.max(
+      1,
+      bounds.width * POINTER_GAZE_RADIUS_X_RATIO,
+    );
+    pointerGazeRegion.radiusY = Math.max(
+      1,
+      bounds.height * POINTER_GAZE_RADIUS_Y_RATIO,
+    );
   };
 
   /** 把双眼三维中点投影到当前画布，保证肖像换位后仍真正看向指针。 */
