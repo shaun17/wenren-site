@@ -564,6 +564,40 @@ test("anchors directory chapters over a right-side reading surface", async () =>
   assert.match(scene, /readSpatialAvatarTransitionProgress/);
 });
 
+/** 空间肖像必须把固定浅色摄影棚延伸到文档根层，避免深色系统下露底或闪黑。 */
+test("keeps the light studio background across every document layer", async () => {
+  const [styles, globalStyles] = await Promise.all([
+    readFile(new URL("../src/styles/avatar.css", import.meta.url), "utf8"),
+    readFile(new URL("../src/styles/global.css", import.meta.url), "utf8"),
+  ]);
+
+  const spatialRootRule = styles.match(
+    /:root:has\(\.spatial-page\)\s*\{([\s\S]*?)\n\}/,
+  )?.[1];
+  assert.ok(spatialRootRule, "空间肖像必须在文档根层声明独立主题");
+  assert.match(spatialRootRule, /color-scheme:\s*light;/);
+  assert.match(
+    spatialRootRule,
+    /--spatial-stage-background:\s*#e8e5db;/,
+  );
+  assert.match(
+    spatialRootRule,
+    /--page-background:\s*var\(--spatial-stage-background\);/,
+  );
+  assert.match(
+    styles,
+    /\.spatial-page\s*\{[^}]*background:\s*var\(--spatial-stage-background\);/s,
+  );
+  assert.match(
+    globalStyles,
+    /html\s*\{[^}]*background:\s*var\(--page-background\);/s,
+  );
+  assert.match(
+    globalStyles,
+    /body\s*\{[^}]*background:\s*var\(--page-background\);/s,
+  );
+});
+
 /** 肖像灯光必须显著抬亮正面，并以中性环境反射补足 PBR 材质层次。 */
 test("builds a bright and balanced portrait light rig", () => {
   const lightRig = createPortraitLightRig();
@@ -1668,7 +1702,11 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
     styles,
     /\.spatial-page\.is-content-phase[^{]*\.spatial-portrait-static-poster/,
   );
-  assert.match(styles, /background:\s*#e8e5db/);
+  assert.match(styles, /--spatial-stage-background:\s*#e8e5db/);
+  assert.match(
+    styles,
+    /background:\s*var\(--spatial-stage-background\)/,
+  );
   assert.match(styles, /at 68% 30%/);
   assert.match(styles, /rgba\(164, 174, 178, 0\.12\)/);
   assert.match(styles, /width:\s*100vw;\s*height:\s*100svh/);

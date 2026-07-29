@@ -1,3 +1,18 @@
+/*
+ * 空间肖像是固定浅色的完整摄影棚场景。覆盖共享页面令牌，让根层、滚动回弹与
+ * 加载期间都使用同一底色；普通页面仍继续跟随系统深浅主题。
+ */
+:root:has(.spatial-page) {
+  color-scheme: light;
+  --spatial-stage-background: #e8e5db;
+  --page-background: var(--spatial-stage-background);
+  --text-primary: #20211e;
+  --text-muted: rgba(32, 33, 30, 0.64);
+  --line: rgba(32, 33, 30, 0.22);
+  --line-strong: rgba(32, 33, 30, 0.42);
+  --surface-subtle: rgba(32, 33, 30, 0.055);
+}
+
 .spatial-page {
   --spatial-light-shift: 0vw;
   --spatial-light-scale: 1;
@@ -8,7 +23,7 @@
   --spatial-line: rgba(32, 33, 30, 0.22);
   position: relative;
   overflow: clip;
-  background: #e8e5db;
+  background: var(--spatial-stage-background);
   color: var(--spatial-ink);
   isolation: isolate;
 }
