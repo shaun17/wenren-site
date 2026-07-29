@@ -1,0 +1,121 @@
+.home-sticker-anchor {
+  position: absolute;
+  z-index: 4;
+  top: calc(var(--home-gutter) + clamp(0.2rem, 0.8vw, 0.75rem));
+  right: var(--home-gutter);
+  width: clamp(5.75rem, 9.5vw, 9rem);
+  aspect-ratio: 1;
+  pointer-events: none;
+  animation: content-reveal 900ms 180ms ease-out both;
+}
+
+/* 外层只处理用户位移与手动旋转，和内层跷跷板动画保持独立。 */
+.home-sticker {
+  --sticker-x: 0px;
+  --sticker-y: 0px;
+  --sticker-rotation: 0deg;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: 30%;
+  cursor: grab;
+  pointer-events: auto;
+  touch-action: none;
+  transform: translate3d(var(--sticker-x), var(--sticker-y), 0)
+    rotate(var(--sticker-rotation));
+  transform-origin: center;
+  transition: transform 1.35s cubic-bezier(0.22, 1, 0.36, 1);
+  user-select: none;
+}
+
+/* 聚焦期间让键盘与滚轮响应及时；失焦后恢复较慢的归位节奏。 */
+.home-sticker:focus {
+  transition-duration: 180ms;
+  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.home-sticker:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 0.35rem;
+}
+
+.home-sticker.is-dragging,
+.home-sticker.is-rotating {
+  cursor: grabbing;
+  transition: none;
+}
+
+/* 图片层保留真实白边，并用轻阴影把透明贴纸从浅色背景中托起。 */
+.home-sticker-float,
+.home-sticker img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.home-sticker-float {
+  filter: drop-shadow(0 0.42rem 0.6rem rgba(17, 17, 17, 0.16));
+  transform-origin: 50% 58%;
+}
+
+.home-sticker img {
+  object-fit: contain;
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+
+/* 围绕偏下的支点左右轻摆，同时抬升少量高度，形成跷跷板式浮动。 */
+@keyframes home-sticker-seesaw {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(-2.4deg);
+  }
+
+  25% {
+    transform: translate3d(0, -0.28rem, 0) rotate(0.8deg);
+  }
+
+  50% {
+    transform: translate3d(0, -0.48rem, 0) rotate(2.8deg);
+  }
+
+  75% {
+    transform: translate3d(0, -0.2rem, 0) rotate(-0.6deg);
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .home-sticker:hover .home-sticker-float,
+  .home-sticker:focus-visible .home-sticker-float {
+    animation: home-sticker-seesaw 2.35s ease-in-out infinite;
+  }
+
+  .home-sticker.is-dragging .home-sticker-float,
+  .home-sticker.is-rotating .home-sticker-float {
+    animation-play-state: paused;
+  }
+}
+
+@media (max-width: 760px) {
+  .home-sticker-anchor {
+    top: calc(var(--home-gutter) + 1.1rem);
+    width: clamp(5rem, 22vw, 5.75rem);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-sticker,
+  .home-sticker:focus {
+    transition-duration: 0.01ms;
+  }
+
+  .home-sticker:hover .home-sticker-float,
+  .home-sticker:focus-visible .home-sticker-float {
+    animation: none;
+  }
+}

@@ -2,6 +2,7 @@
 import DecimalYear from "../components/DecimalYear.astro";
 import DirectoryColumn from "../components/DirectoryColumn.astro";
 import FooterDetails from "../components/FooterDetails.astro";
+import HomeSticker from "../components/HomeSticker.astro";
 import { ORDERED_CATEGORIES } from "../content/categories";
 import { getSiteContent } from "../content/site-content";
 import SiteLayout from "../layouts/SiteLayout.astro";
@@ -32,6 +33,8 @@ const headlinePrefixTail = siteConfig.home.headline.prefix.slice(
 <SiteLayout>
   <main class="site-shell">
     <section class="hero" aria-labelledby="hero-title">
+      <HomeSticker />
+
       <p class="hero-kicker">{siteConfig.brand.kicker}</p>
 
       <h1 id="hero-title"><a class="hero-avatar-link animated-underline" href="/avatar/" aria-label={`查看 ${siteConfig.brand.name} 的 3D 形象`} data-avatar-link data-astro-prefetch="hover">{headlineBrandLabel}</a>{headlinePrefixTail}<a class="hero-headline-link animated-underline" href={headlineCategory.path}>{siteConfig.home.headline.linkLabel}</a>{siteConfig.home.headline.suffix}</h1>
