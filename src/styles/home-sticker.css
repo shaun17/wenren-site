@@ -9,11 +9,15 @@
   animation: content-reveal 900ms 180ms ease-out both;
 }
 
-/* 外层只处理用户位移与手动旋转，和内层跷跷板动画保持独立。 */
+/* 按钮外层只负责拖拽位移，松手后与内层惯性旋转可以同时进行。 */
 .home-sticker {
   --sticker-x: 0px;
   --sticker-y: 0px;
   --sticker-rotation: 0deg;
+  --sticker-tilt-x: 0deg;
+  --sticker-tilt-y: 0deg;
+  --sticker-origin-x: 50%;
+  --sticker-origin-y: 50%;
   position: absolute;
   inset: 0;
   width: 100%;
@@ -23,82 +27,77 @@
   background: transparent;
   border: 0;
   border-radius: 30%;
+  outline: none;
+  box-shadow: none;
   cursor: grab;
   pointer-events: auto;
   touch-action: none;
-  transform: translate3d(var(--sticker-x), var(--sticker-y), 0)
-    rotate(var(--sticker-rotation));
-  transform-origin: center;
-  transition: transform 1.35s cubic-bezier(0.22, 1, 0.36, 1);
+  transform: translate3d(var(--sticker-x), var(--sticker-y), 0);
+  transition: transform 900ms cubic-bezier(0.22, 1, 0.36, 1);
   user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
-/* 聚焦期间让键盘与滚轮响应及时；失焦后恢复较慢的归位节奏。 */
-.home-sticker:focus {
-  transition-duration: 180ms;
-  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
-}
-
+.home-sticker:focus,
 .home-sticker:focus-visible {
-  outline: 2px solid var(--text-primary);
-  outline-offset: 0.35rem;
+  outline: none;
+  box-shadow: none;
 }
 
-.home-sticker.is-dragging,
-.home-sticker.is-rotating {
+.home-sticker.is-dragging {
   cursor: grabbing;
   transition: none;
 }
 
-/* 图片层保留真实白边，并用轻阴影把透明贴纸从浅色背景中托起。 */
-.home-sticker-float,
+/* 独立旋转层只接收 JS 写入的连续角度，支持跨越多个完整圈。 */
+.home-sticker-spin,
+.home-sticker-surface,
 .home-sticker img {
   display: block;
   width: 100%;
   height: 100%;
 }
 
-.home-sticker-float {
+.home-sticker-spin {
+  pointer-events: none;
+  transform: rotate(var(--sticker-rotation));
+  transform-origin: center;
+  will-change: transform;
+}
+
+/* 表面层只响应鼠标落点；落点压下、反方向支撑边翘起，停住后不再运动。 */
+.home-sticker-surface {
+  pointer-events: none;
   filter: drop-shadow(0 0.42rem 0.6rem rgba(17, 17, 17, 0.16));
-  transform-origin: 50% 58%;
+  transform: perspective(26rem) translateZ(0) rotateX(var(--sticker-tilt-x))
+    rotateY(var(--sticker-tilt-y)) scale(1);
+  transform-origin: var(--sticker-origin-x) var(--sticker-origin-y);
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+  transition:
+    transform 110ms cubic-bezier(0.16, 1, 0.3, 1),
+    filter 160ms ease-out;
+  will-change: transform;
+}
+
+.home-sticker.is-pointer-over .home-sticker-surface,
+.home-sticker.is-dragging .home-sticker-surface {
+  filter: drop-shadow(0 0.58rem 0.74rem rgba(17, 17, 17, 0.2));
+  transform: perspective(26rem) translateZ(-0.14rem)
+    rotateX(var(--sticker-tilt-x)) rotateY(var(--sticker-tilt-y)) scale(0.988);
+}
+
+/* 键盘焦点只增强贴纸自身光晕，不再绘制黑色矩形边框。 */
+.home-sticker:focus-visible .home-sticker-surface {
+  filter:
+    drop-shadow(0 0 0.3rem rgba(255, 205, 48, 0.7))
+    drop-shadow(0 0.5rem 0.7rem rgba(17, 17, 17, 0.18));
 }
 
 .home-sticker img {
   object-fit: contain;
   pointer-events: none;
   -webkit-user-drag: none;
-}
-
-/* 围绕偏下的支点左右轻摆，同时抬升少量高度，形成跷跷板式浮动。 */
-@keyframes home-sticker-seesaw {
-  0%,
-  100% {
-    transform: translate3d(0, 0, 0) rotate(-2.4deg);
-  }
-
-  25% {
-    transform: translate3d(0, -0.28rem, 0) rotate(0.8deg);
-  }
-
-  50% {
-    transform: translate3d(0, -0.48rem, 0) rotate(2.8deg);
-  }
-
-  75% {
-    transform: translate3d(0, -0.2rem, 0) rotate(-0.6deg);
-  }
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .home-sticker:hover .home-sticker-float,
-  .home-sticker:focus-visible .home-sticker-float {
-    animation: home-sticker-seesaw 2.35s ease-in-out infinite;
-  }
-
-  .home-sticker.is-dragging .home-sticker-float,
-  .home-sticker.is-rotating .home-sticker-float {
-    animation-play-state: paused;
-  }
 }
 
 @media (max-width: 760px) {
@@ -110,12 +109,13 @@
 
 @media (prefers-reduced-motion: reduce) {
   .home-sticker,
-  .home-sticker:focus {
+  .home-sticker-surface {
     transition-duration: 0.01ms;
   }
 
-  .home-sticker:hover .home-sticker-float,
-  .home-sticker:focus-visible .home-sticker-float {
-    animation: none;
+  .home-sticker-surface,
+  .home-sticker.is-pointer-over .home-sticker-surface,
+  .home-sticker.is-dragging .home-sticker-surface {
+    transform: none;
   }
 }

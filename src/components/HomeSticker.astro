@@ -3,7 +3,7 @@ import "../styles/home-sticker.css";
 
 const stickerAsset = "/stickers/mcdonald-logo-sticker-705aee4ab869.png";
 const stickerInstructions =
-  "拖动移动；按住 Shift 拖动或滚轮旋转；点击页面空白处后缓慢归位";
+  "拖动后松开自动归位；快速甩动会惯性旋转";
 ---
 
 <div class="home-sticker-anchor">
@@ -11,20 +11,21 @@ const stickerInstructions =
     class="home-sticker"
     type="button"
     aria-label={`麦当劳金色拱门贴纸。${stickerInstructions}`}
-    aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowLeft Shift+ArrowRight Escape Enter Space"
-    title={stickerInstructions}
+    aria-keyshortcuts="ArrowLeft ArrowRight Escape Enter Space"
     data-home-sticker
   >
-    <span class="home-sticker-float" aria-hidden="true">
-      <img
-        src={stickerAsset}
-        width="512"
-        height="512"
-        alt=""
-        loading="eager"
-        decoding="async"
-        draggable="false"
-      />
+    <span class="home-sticker-spin" aria-hidden="true">
+      <span class="home-sticker-surface">
+        <img
+          src={stickerAsset}
+          width="512"
+          height="512"
+          alt=""
+          loading="eager"
+          decoding="async"
+          draggable="false"
+        />
+      </span>
     </span>
   </button>
 </div>
@@ -32,7 +33,7 @@ const stickerInstructions =
 <script>
   import { initHomeSticker } from "../lib/home-sticker";
 
-  /** 初始化首页唯一的贴纸，并由交互模块统一处理拖拽、旋转与归位。 */
+  /** 初始化首页唯一贴纸的拖拽归位、落点压感与惯性旋转。 */
   const initializeHomeSticker = (): void => {
     const sticker = document.querySelector<HTMLElement>("[data-home-sticker]");
     if (sticker) initHomeSticker(sticker);
