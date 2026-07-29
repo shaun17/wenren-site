@@ -90,9 +90,10 @@ test("wires the homepage sticker interaction and seesaw motion", async () => {
 
 /** 最终静态产物只在首页加载贴纸，内页不会承担无关装饰与交互脚本。 */
 test("renders the sticker only in the built homepage", async () => {
-  const [homepage, avatarPage] = await Promise.all([
+  const [homepage, avatarPage, headers] = await Promise.all([
     readFile(new URL("../dist/index.html", import.meta.url), "utf8"),
     readFile(new URL("../dist/avatar/index.html", import.meta.url), "utf8"),
+    readFile(new URL("../dist/_headers", import.meta.url), "utf8"),
     access(
       new URL(
         "../dist/stickers/mcdonald-logo-sticker-705aee4ab869.png",
@@ -104,4 +105,8 @@ test("renders the sticker only in the built homepage", async () => {
   assert.match(homepage, /data-home-sticker/);
   assert.match(homepage, /\/stickers\/mcdonald-logo-sticker-705aee4ab869\.png/);
   assert.doesNotMatch(avatarPage, /data-home-sticker|mcdonald-logo-sticker/);
+  assert.match(
+    headers,
+    /\/stickers\/\*\s+Cache-Control: public, max-age=31536000, immutable/,
+  );
 });
