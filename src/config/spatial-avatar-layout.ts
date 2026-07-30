@@ -4,6 +4,12 @@ export const SPATIAL_AVATAR_READING_PHASE_RATIO = 0.82;
 /** 滚动提示在首段前半程提前退出，把视觉重心平稳交给 About 与模型。 */
 const SPATIAL_SCROLL_CUE_FADE_END = 0.34;
 
+/** 目录中心进入视口中央安全区后保持完整清晰。 */
+export const SPATIAL_DIRECTORY_FOCUS_INNER_RATIO = 0.18;
+
+/** 目录中心接近视口边缘时完全融回背景，避免同屏出现两个视觉重点。 */
+export const SPATIAL_DIRECTORY_FOCUS_OUTER_RATIO = 0.48;
+
 export interface SpatialAvatarIntroPresentation {
   aboutOpacity: number;
   cueOpacity: number;
@@ -40,3 +46,21 @@ export const readSpatialAvatarIntroPresentation = (
   cueOpacity:
     1 - easeTransitionProgress(progress / SPATIAL_SCROLL_CUE_FADE_END),
 });
+
+/**
+ * 根据目录章节中心与视口中心的距离计算可见度。
+ * 只改变文字透明度，不在背景上叠加颜色，因此滚动交接不会产生横向硬边。
+ */
+export const readSpatialDirectoryFocusOpacity = (
+  chapterCenterY: number,
+  viewportCenterY: number,
+  viewportHeight: number,
+): number => {
+  const normalizedDistance =
+    Math.abs(chapterCenterY - viewportCenterY) / Math.max(1, viewportHeight);
+  const fadeProgress =
+    (normalizedDistance - SPATIAL_DIRECTORY_FOCUS_INNER_RATIO) /
+    (SPATIAL_DIRECTORY_FOCUS_OUTER_RATIO -
+      SPATIAL_DIRECTORY_FOCUS_INNER_RATIO);
+  return 1 - easeTransitionProgress(fadeProgress);
+};

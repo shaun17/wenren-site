@@ -9,7 +9,10 @@ import { spatialAvatarAssets } from "../src/config/spatial-avatar-assets.ts";
 import {
   readSpatialAvatarIntroPresentation,
   readSpatialAvatarTransitionProgress,
+  readSpatialDirectoryFocusOpacity,
   SPATIAL_AVATAR_READING_PHASE_RATIO,
+  SPATIAL_DIRECTORY_FOCUS_INNER_RATIO,
+  SPATIAL_DIRECTORY_FOCUS_OUTER_RATIO,
 } from "../src/config/spatial-avatar-layout.ts";
 import {
   canPresentSpatialAvatarScene,
@@ -437,7 +440,81 @@ test("fades the avatar introduction with the shared scroll progress", () => {
   assert.ok(samples[4].aboutOpacity > 0, "About 应继续随首屏剩余距离渐隐");
 });
 
-/** 目录吸附与半屏蒙版只作用于右栏，窄屏和减少动态路径保持原有可读性。 */
+/** 目录文字只在视口中心成为重点，并以平滑透明度融回共享底色。 */
+test("keeps only the centered directory chapter visually prominent", () => {
+  const viewportHeight = 800;
+  const viewportCenterY = 1200;
+  assert.equal(
+    readSpatialDirectoryFocusOpacity(
+      viewportCenterY,
+      viewportCenterY,
+      viewportHeight,
+    ),
+    1,
+  );
+  assert.equal(
+    readSpatialDirectoryFocusOpacity(
+      viewportCenterY +
+        viewportHeight * SPATIAL_DIRECTORY_FOCUS_INNER_RATIO,
+      viewportCenterY,
+      viewportHeight,
+    ),
+    1,
+  );
+  assert.equal(
+    readSpatialDirectoryFocusOpacity(
+      viewportCenterY +
+        viewportHeight * SPATIAL_DIRECTORY_FOCUS_OUTER_RATIO,
+      viewportCenterY,
+      viewportHeight,
+    ),
+    0,
+  );
+
+  const distanceSamples = [0, 0.18, 0.24, 0.32, 0.4, 0.48, 0.6].map(
+    (distance) =>
+      readSpatialDirectoryFocusOpacity(
+        viewportCenterY + viewportHeight * distance,
+        viewportCenterY,
+        viewportHeight,
+      ),
+  );
+  for (const [index, opacity] of distanceSamples.entries()) {
+    assert.ok(opacity >= 0 && opacity <= 1);
+    assert.equal(
+      opacity,
+      readSpatialDirectoryFocusOpacity(
+        viewportCenterY - viewportHeight * [0, 0.18, 0.24, 0.32, 0.4, 0.48, 0.6][
+          index
+        ],
+        viewportCenterY,
+        viewportHeight,
+      ),
+      "目录上下两侧必须使用对称渐隐",
+    );
+    if (index > 0) assert.ok(opacity <= distanceSamples[index - 1]);
+  }
+
+  // 相邻章节中心相隔一屏时，任意滚动位置最多只能有一个高强调目录。
+  for (let progress = 0; progress <= 1; progress += 0.05) {
+    const currentOpacity = readSpatialDirectoryFocusOpacity(
+      viewportCenterY,
+      viewportCenterY + viewportHeight * progress,
+      viewportHeight,
+    );
+    const nextOpacity = readSpatialDirectoryFocusOpacity(
+      viewportCenterY + viewportHeight,
+      viewportCenterY + viewportHeight * progress,
+      viewportHeight,
+    );
+    assert.ok(
+      [currentOpacity, nextOpacity].filter((opacity) => opacity > 0.5).length <=
+        1,
+    );
+  }
+});
+
+/** 目录吸附与文字渐隐只作用于桌面，窄屏和减少动态路径保持完整可读性。 */
 test("anchors directory chapters over a right-side reading surface", async () => {
   const [avatarPage, bootstrap, scene, styles] = await Promise.all([
     readFile(new URL("../src/pages/avatar.astro", import.meta.url), "utf8"),
@@ -474,19 +551,10 @@ test("anchors directory chapters over a right-side reading surface", async () =>
     /<div class="spatial-directory-story" data-spatial-directory-surface>([\s\S]*?)\n\s*<\/div>\n\s*<\/div>\n\s*<\/main>/,
   )?.[1];
   assert.ok(directorySurfaceMarkup, "共享背景承载层必须完整包住目录章节");
-  assert.equal(
-    (
-      directorySurfaceMarkup.match(
-        /<div class="spatial-directory-focus-veil" aria-hidden="true"><\/div>/g,
-      ) ?? []
-    ).length,
-    1,
-    "目录共享容器必须只绘制一层不参与语义的视口渐变",
-  );
-  assert.ok(
-    directorySurfaceMarkup.indexOf("spatial-directory-focus-veil") <
-      directorySurfaceMarkup.indexOf('data-spatial-chapter="1"'),
-    "视口渐变必须位于目录章节之前，避免改变章节顺序",
+  assert.doesNotMatch(
+    directorySurfaceMarkup,
+    /spatial-directory-focus-veil/,
+    "目录容器不得再加入会产生横向色差的覆盖层",
   );
   assert.deepEqual(
     [...directorySurfaceMarkup.matchAll(/data-spatial-chapter="(\d+)"/g)].map(
@@ -524,7 +592,7 @@ test("anchors directory chapters over a right-side reading surface", async () =>
   );
   assert.match(
     directorySurfaceRule,
-    /(?:^|\n)\s*mask-image:[\s\S]*?linear-gradient\(\s*90deg,\s*transparent 0 43%,[\s\S]*?#000 61% 100%[\s\S]*?linear-gradient\(\s*180deg,\s*transparent 0%,[\s\S]*?#000 12svh calc\(100% - 12svh\),[\s\S]*?transparent 100%/,
+    /(?:^|\n)\s*mask-image:[\s\S]*?linear-gradient\(\s*90deg,\s*transparent 0 43%,[\s\S]*?#000 61% 100%[\s\S]*?linear-gradient\(\s*180deg,\s*transparent 0%,[\s\S]*?rgba\(0, 0, 0, 0\.14\) 4svh,[\s\S]*?rgba\(0, 0, 0, 0\.5\) 10svh,[\s\S]*?#000 18svh calc\(100% - 18svh\),[\s\S]*?transparent 100%/,
     "桌面目录左缘与整组首尾必须柔和过渡，章节交界保持连续实色",
   );
   assert.match(directorySurfaceRule, /(?:^|\n)\s*-webkit-mask-image:/);
@@ -545,32 +613,23 @@ test("anchors directory chapters over a right-side reading surface", async () =>
     /\.spatial-directory-story::after\s*\{/,
     "About 与目录之间不得绘制会在首屏形成白色横带的独立覆盖层",
   );
-  const focusVeilRule = styles.match(
-    /\.spatial-directory-focus-veil\s*\{([\s\S]*?)\n\}/,
-  )?.[1];
-  assert.ok(focusVeilRule, "目录滚动过程必须保留独立的视口焦点渐变");
-  for (const declaration of [
-    /position:\s*sticky;/,
-    /top:\s*0;/,
-    /z-index:\s*4;/,
-    /height:\s*100svh;/,
-    /margin-bottom:\s*-100svh;/,
-    /pointer-events:\s*none;/,
-    /(?:^|\n)\s*mask-image:\s*linear-gradient\(\s*90deg,/,
-    /(?:^|\n)\s*-webkit-mask-image:\s*linear-gradient\(\s*90deg,/,
-    /top\s*\/\s*100%\s*clamp\(7rem,\s*24svh,\s*13rem\)\s*no-repeat/,
-    /bottom\s*\/\s*100%\s*clamp\(9rem,\s*34svh,\s*18rem\)\s*no-repeat/,
-  ]) {
-    assert.match(focusVeilRule, declaration);
-  }
-  assert.match(
-    focusVeilRule,
-    /rgba\(239,\s*235,\s*225,\s*0\.98\)[\s\S]*?transparent\s*100%[\s\S]*?rgba\(239,\s*235,\s*225,\s*0\.98\)[\s\S]*?transparent\s*100%/,
-    "视口上下两端必须分别从连续目录底色渐隐到透明",
+  assert.doesNotMatch(
+    styles,
+    /\.spatial-directory-focus-veil/,
+    "不得再用有颜色的 sticky 层覆盖目录背景",
   );
+  const directoryCopyRule = styles.match(
+    /\.spatial-chapter-directory \.spatial-copy\s*\{([\s\S]*?)\n\}/,
+  )?.[1];
+  assert.ok(directoryCopyRule, "目录文字必须接入独立的中心焦点透明度");
+  assert.match(
+    directoryCopyRule,
+    /opacity:\s*var\(--spatial-directory-copy-opacity, 1\);/,
+  );
+  assert.match(directoryCopyRule, /will-change:\s*opacity;/);
   assert.match(
     styles,
-    /\.spatial-directory-story:has\(\.spatial-chapter-directory:focus-within\)[\s\S]*?\.spatial-directory-focus-veil\s*\{\s*opacity:\s*0;/,
+    /\.spatial-chapter-directory \.spatial-copy:focus-within\s*\{\s*opacity:\s*1;/,
     "键盘进入目录时必须完整显露焦点环",
   );
   assert.match(directoryRule, /scroll-snap-align:\s*center;/);
@@ -597,13 +656,13 @@ test("anchors directory chapters over a right-side reading surface", async () =>
   );
   assert.match(
     styles,
-    /@media \(max-height: 600px\)[\s\S]*?\.spatial-directory-focus-veil\s*\{\s*display:\s*none;[\s\S]*?@media \(min-width: 801px\) and \(max-height: 600px\) and \(prefers-reduced-motion: no-preference\)\s*\{\s*html:has\(\.spatial-page\)\s*\{\s*scroll-snap-type:\s*none;/,
-    "横屏短视口必须关闭焦点渐变与自动吸附",
+    /@media \(max-height: 600px\)[\s\S]*?\.spatial-chapter-directory \.spatial-copy\s*\{\s*opacity:\s*1;[\s\S]*?will-change:\s*auto;[\s\S]*?@media \(min-width: 801px\) and \(max-height: 600px\) and \(prefers-reduced-motion: no-preference\)\s*\{\s*html:has\(\.spatial-page\)\s*\{\s*scroll-snap-type:\s*none;/,
+    "横屏短视口必须关闭文字渐隐与自动吸附",
   );
   assert.match(
     styles,
-    /@media \(max-width: 800px\)[\s\S]*?\.spatial-directory-story::before\s*\{\s*content:\s*none;[\s\S]*?\.spatial-directory-focus-veil\s*\{\s*display:\s*none;/,
-    "窄屏不得叠加桌面右半屏背景与视口渐变",
+    /@media \(max-width: 800px\)[\s\S]*?\.spatial-directory-story::before\s*\{\s*content:\s*none;[\s\S]*?\.spatial-chapter-directory \.spatial-copy\s*\{\s*opacity:\s*1;[\s\S]*?will-change:\s*auto;/,
+    "窄屏不得叠加桌面右半屏背景或滚动渐隐",
   );
   assert.match(
     styles,
@@ -612,18 +671,22 @@ test("anchors directory chapters over a right-side reading surface", async () =>
   );
   assert.match(
     styles,
-    /@media \(prefers-reduced-motion: reduce\)[\s\S]*?scroll-snap-type:\s*none;[\s\S]*?\.spatial-directory-focus-veil\s*\{\s*display:\s*none;[\s\S]*?\.spatial-copy-intro,[\s\S]*?\.spatial-scroll-cue\s*\{\s*opacity:\s*1;/,
+    /@media \(prefers-reduced-motion: reduce\)[\s\S]*?scroll-snap-type:\s*none;[\s\S]*?\.spatial-chapter-directory \.spatial-copy\s*\{\s*opacity:\s*1;[\s\S]*?will-change:\s*auto;[\s\S]*?\.spatial-copy-intro,[\s\S]*?\.spatial-scroll-cue\s*\{\s*opacity:\s*1;/,
     "减少动态时必须关闭吸附和全部滚动渐隐",
   );
 
   for (const property of [
     "--spatial-about-opacity",
     "--spatial-cue-opacity",
+    "--spatial-directory-copy-opacity",
   ]) {
-    assert.match(bootstrap, new RegExp(`style\\.setProperty\\("${property}"`));
     assert.match(
       bootstrap,
-      new RegExp(`style\\.removeProperty\\("${property}"\\)`),
+      new RegExp(`style\\.setProperty\\(\\s*"${property}"`),
+    );
+    assert.match(
+      bootstrap,
+      new RegExp(`style\\.removeProperty\\(\\s*"${property}"\\s*\\)`),
     );
   }
   assert.match(bootstrap, /readSpatialAvatarTransitionProgress/);

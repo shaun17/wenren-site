@@ -1,6 +1,7 @@
 import {
   readSpatialAvatarIntroPresentation,
   readSpatialAvatarTransitionProgress,
+  readSpatialDirectoryFocusOpacity,
   SPATIAL_AVATAR_READING_PHASE_RATIO,
 } from "../config/spatial-avatar-layout";
 import { prepareSpatialAvatarModelLoad } from "./spatial-avatar-model";
@@ -47,6 +48,9 @@ export const initSpatialPortrait = (root: HTMLElement): SceneCleanup => {
   const staticPosterImage = root.querySelector<HTMLImageElement>(
     "[data-spatial-static-image]",
   );
+  const directoryChapters = Array.from(
+    page?.querySelectorAll<HTMLElement>("[data-spatial-snap-anchor]") ?? [],
+  );
   if (!page) return () => undefined;
 
   root.dataset.spatialInitialized = "true";
@@ -59,6 +63,48 @@ export const initSpatialPortrait = (root: HTMLElement): SceneCleanup => {
   let staticPosterLoad: Promise<boolean> | null = null;
   let phaseUpdateId = 0;
   let pendingSceneLoadController: AbortController | null = null;
+  let directoryChapterCenters: number[] = [];
+  let shouldMeasureDirectoryChapters = true;
+
+  /**
+   * 只在初始化与视口尺寸变化时测量目录中心；滚动帧复用缓存，避免反复触发布局计算。
+   */
+  const measureDirectoryChapterCenters = (): void => {
+    directoryChapterCenters = directoryChapters.map((chapter) => {
+      const bounds = chapter.getBoundingClientRect();
+      return bounds.top + window.scrollY + bounds.height / 2;
+    });
+    shouldMeasureDirectoryChapters = false;
+  };
+
+  /**
+   * 目录文字按离视口中心的距离连续淡入淡出，让共享底色保持完整且没有覆盖层硬边。
+   */
+  const updateDirectoryFocus = (): void => {
+    const canUseDirectoryFocus =
+      !motionPreference.matches &&
+      window.innerWidth > 800 &&
+      window.innerHeight > 600;
+    if (!canUseDirectoryFocus) {
+      for (const chapter of directoryChapters) {
+        chapter.style.removeProperty("--spatial-directory-copy-opacity");
+      }
+      return;
+    }
+    if (shouldMeasureDirectoryChapters) measureDirectoryChapterCenters();
+    const viewportCenterY = window.scrollY + window.innerHeight / 2;
+    for (const [index, chapter] of directoryChapters.entries()) {
+      const opacity = readSpatialDirectoryFocusOpacity(
+        directoryChapterCenters[index] ?? viewportCenterY,
+        viewportCenterY,
+        window.innerHeight,
+      );
+      chapter.style.setProperty(
+        "--spatial-directory-copy-opacity",
+        opacity.toFixed(4),
+      );
+    }
+  };
 
   /** 同步首屏文字、阅读态与静态降级，让所有视觉通道共用同一滚动进度。 */
   const updatePortraitPhase = (): void => {
@@ -78,6 +124,7 @@ export const initSpatialPortrait = (root: HTMLElement): SceneCleanup => {
     page.style.setProperty("--spatial-about-opacity", aboutOpacity.toFixed(4));
     page.style.setProperty("--spatial-cue-opacity", cueOpacity.toFixed(4));
     page.classList.toggle("is-content-phase", isContentPhase);
+    updateDirectoryFocus();
     if (isContentPhase && !root.classList.contains("is-webgl-ready")) {
       void ensureStaticPoster();
     }
@@ -90,6 +137,12 @@ export const initSpatialPortrait = (root: HTMLElement): SceneCleanup => {
       phaseUpdateId = 0;
       updatePortraitPhase();
     });
+  };
+
+  /** 视口尺寸变化后先废弃目录位置缓存，再合并到下一帧统一刷新。 */
+  const schedulePortraitResizeUpdate = (): void => {
+    shouldMeasureDirectoryChapters = true;
+    schedulePortraitPhaseUpdate();
   };
 
   /** 按需加载静态降级海报；正常 WebGL 首屏不会为不可见图片浪费请求。 */
@@ -304,6 +357,7 @@ export const initSpatialPortrait = (root: HTMLElement): SceneCleanup => {
 
   /** 运行中切换“减少动态”时立即释放 GPU，再次允许动态时重新加载。 */
   const reconcileMotionPreference = (): void => {
+    schedulePortraitPhaseUpdate();
     if (motionPreference.matches) {
       activateStaticPoster("is-static", "已根据动态偏好展示同模型静态海报。");
       return;
@@ -327,6 +381,9 @@ export const initSpatialPortrait = (root: HTMLElement): SceneCleanup => {
     page.classList.remove("is-content-phase");
     page.style.removeProperty("--spatial-about-opacity");
     page.style.removeProperty("--spatial-cue-opacity");
+    for (const chapter of directoryChapters) {
+      chapter.style.removeProperty("--spatial-directory-copy-opacity");
+    }
     delete root.dataset.spatialInitialized;
   };
 
@@ -334,7 +391,7 @@ export const initSpatialPortrait = (root: HTMLElement): SceneCleanup => {
     passive: true,
     signal,
   });
-  window.addEventListener("resize", schedulePortraitPhaseUpdate, {
+  window.addEventListener("resize", schedulePortraitResizeUpdate, {
     passive: true,
     signal,
   });

@@ -358,7 +358,10 @@
   scroll-snap-stop: normal;
 }
 
-/* 三个目录章节共用一张底色，只在整组首尾和左缘渐隐，章节交界不再露底。 */
+/*
+ * 三个目录章节共用唯一底色；About 与目录之间也只由这张底色自身渐入，
+ * 不再叠加会从某一行突然开始绘制的浅色覆盖层。
+ */
 .spatial-directory-story {
   position: relative;
 }
@@ -382,11 +385,11 @@
     linear-gradient(
       180deg,
       transparent 0%,
-      rgba(0, 0, 0, 0.22) 3svh,
-      rgba(0, 0, 0, 0.72) 7svh,
-      #000 12svh calc(100% - 12svh),
-      rgba(0, 0, 0, 0.72) calc(100% - 7svh),
-      rgba(0, 0, 0, 0.22) calc(100% - 3svh),
+      rgba(0, 0, 0, 0.14) 4svh,
+      rgba(0, 0, 0, 0.5) 10svh,
+      #000 18svh calc(100% - 18svh),
+      rgba(0, 0, 0, 0.5) calc(100% - 10svh),
+      rgba(0, 0, 0, 0.14) calc(100% - 4svh),
       transparent 100%
     );
   mask-composite: intersect;
@@ -401,63 +404,23 @@
     linear-gradient(
       180deg,
       transparent 0%,
-      rgba(0, 0, 0, 0.22) 3svh,
-      rgba(0, 0, 0, 0.72) 7svh,
-      #000 12svh calc(100% - 12svh),
-      rgba(0, 0, 0, 0.72) calc(100% - 7svh),
-      rgba(0, 0, 0, 0.22) calc(100% - 3svh),
+      rgba(0, 0, 0, 0.14) 4svh,
+      rgba(0, 0, 0, 0.5) 10svh,
+      #000 18svh calc(100% - 18svh),
+      rgba(0, 0, 0, 0.5) calc(100% - 10svh),
+      rgba(0, 0, 0, 0.14) calc(100% - 4svh),
       transparent 100%
     );
 }
 
-/*
- * 目录滚动时让上下相邻章节先融回连续底色，视线只落在视口中部。
- * sticky 与负外边距让焦点层覆盖三章滚动过程，但不增加额外页面高度。
- */
-.spatial-directory-focus-veil {
-  position: sticky;
-  top: 0;
-  z-index: 4;
-  height: 100svh;
-  margin-bottom: -100svh;
-  background:
-    linear-gradient(
-        180deg,
-        rgba(239, 235, 225, 0.98) 0%,
-        rgba(239, 235, 225, 0.78) 30%,
-        rgba(239, 235, 225, 0.24) 68%,
-        transparent 100%
-      )
-      top / 100% clamp(7rem, 24svh, 13rem) no-repeat,
-    linear-gradient(
-        0deg,
-        rgba(239, 235, 225, 0.98) 0%,
-        rgba(239, 235, 225, 0.78) 30%,
-        rgba(239, 235, 225, 0.24) 68%,
-        transparent 100%
-      )
-      bottom / 100% clamp(9rem, 34svh, 18rem) no-repeat;
-  pointer-events: none;
-  -webkit-mask-image: linear-gradient(
-    90deg,
-    transparent 0 43%,
-    rgba(0, 0, 0, 0.2) 47%,
-    rgba(0, 0, 0, 0.61) 53%,
-    #000 61% 100%
-  );
-  mask-image: linear-gradient(
-    90deg,
-    transparent 0 43%,
-    rgba(0, 0, 0, 0.2) 47%,
-    rgba(0, 0, 0, 0.61) 53%,
-    #000 61% 100%
-  );
+/* 只渐隐目录文字，不在背景上绘制新颜色；键盘进入时立即恢复完整可见度。 */
+.spatial-chapter-directory .spatial-copy {
+  opacity: var(--spatial-directory-copy-opacity, 1);
+  will-change: opacity;
 }
 
-/* 键盘进入目录时让焦点环完全显露，视觉渐变不能削弱操作反馈。 */
-.spatial-directory-story:has(.spatial-chapter-directory:focus-within)
-  .spatial-directory-focus-veil {
-  opacity: 0;
+.spatial-chapter-directory .spatial-copy:focus-within {
+  opacity: 1;
 }
 
 .spatial-chapter-intro {
@@ -722,8 +685,9 @@
     content: none;
   }
 
-  .spatial-directory-focus-veil {
-    display: none;
+  .spatial-chapter-directory .spatial-copy {
+    opacity: 1;
+    will-change: auto;
   }
 
   .spatial-chapter-intro {
@@ -791,8 +755,9 @@
 
 /* 横屏短视口保留完整目录内容，避免上下渐变压住标题或末行链接。 */
 @media (max-height: 600px) {
-  .spatial-directory-focus-veil {
-    display: none;
+  .spatial-chapter-directory .spatial-copy {
+    opacity: 1;
+    will-change: auto;
   }
 }
 
@@ -801,8 +766,9 @@
     scroll-snap-type: none;
   }
 
-  .spatial-directory-focus-veil {
-    display: none;
+  .spatial-chapter-directory .spatial-copy {
+    opacity: 1;
+    will-change: auto;
   }
 
   .spatial-copy-intro,
