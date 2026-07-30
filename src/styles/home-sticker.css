@@ -9,7 +9,7 @@
   animation: content-reveal 900ms 180ms ease-out both;
 }
 
-/* 按钮外层只负责拖拽位移，松手后与内层惯性旋转可以同时进行。 */
+/* 按钮外层保存用户摆放的位置；只有视口变小时才短暂修正越界距离。 */
 .home-sticker {
   --sticker-x: 0px;
   --sticker-y: 0px;
@@ -31,7 +31,7 @@
   pointer-events: auto;
   touch-action: none;
   transform: translate3d(var(--sticker-x), var(--sticker-y), 0);
-  transition: transform 900ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
   user-select: none;
   -webkit-tap-highlight-color: transparent;
 }

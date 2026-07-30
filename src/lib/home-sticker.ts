@@ -35,7 +35,7 @@ export const STICKER_CLICK_ROTATION_SPEEDS = [
 const ANGULAR_DAMPING = 2.6;
 const ANGULAR_STOP_SPEED = 14;
 const MAX_INERTIA_DURATION_MS = 2_400;
-const PRESS_MAX_TILT = 4;
+const PRESS_MAX_TILT = 6;
 
 /** 将数值限制在指定闭区间，供所有指针物理计算复用。 */
 const clampNumber = (value: number, minimum: number, maximum: number): number =>
@@ -140,7 +140,7 @@ export const normalizeStickerRotation = (rotation: number): number => {
   return Math.abs(normalizedRotation) < 0.0005 ? 0 : normalizedRotation;
 };
 
-/** 初始化首页贴纸的拖拽归位、落点压感和点击随机旋转。 */
+/** 初始化首页贴纸的自由摆放、落点压感和点击随机旋转。 */
 export const initHomeSticker = (sticker: HTMLElement): StickerCleanup => {
   if (sticker.dataset.homeStickerInitialized === "true") {
     return () => undefined;
@@ -173,7 +173,7 @@ export const initHomeSticker = (sticker: HTMLElement): StickerCleanup => {
   let rotationFrame: number | null = null;
   let pressurePointer: StickerTranslation | null = null;
 
-  /** 只把位移写给按钮外层，让松手归位不干扰内层旋转。 */
+  /** 只把持久位移写给按钮外层，让拖拽摆放不干扰内层旋转。 */
   const renderTranslation = (): void => {
     sticker.style.setProperty("--sticker-x", `${translation.x.toFixed(2)}px`);
     sticker.style.setProperty("--sticker-y", `${translation.y.toFixed(2)}px`);
@@ -220,7 +220,7 @@ export const initHomeSticker = (sticker: HTMLElement): StickerCleanup => {
     sticker.style.setProperty("--sticker-tilt-y", "0deg");
   };
 
-  /** 读取 CSS 归位过渡中的真实位置，快速二次抓取时不会突然跳回目标值。 */
+  /** 读取 CSS 边界修正中的真实位置，快速二次抓取时不会跳到过渡终点。 */
   const readRenderedTranslation = (): StickerTranslation => {
     const transform = window.getComputedStyle(sticker).transform;
     if (!transform || transform === "none") return { x: 0, y: 0 };
@@ -229,9 +229,11 @@ export const initHomeSticker = (sticker: HTMLElement): StickerCleanup => {
     return { x: matrix.m41, y: matrix.m42 };
   };
 
-  /** 按贴纸当前包围盒计算可移动范围，拖拽后仍保留可操作边距。 */
+  /** 按旋转后可见层的包围盒计算范围，任意保留角度下都不会把白边拖出屏幕。 */
   const readTranslationBounds = (): StickerTranslationBounds => {
-    const bounds = sticker.getBoundingClientRect();
+    const visibleSticker =
+      sticker.querySelector<HTMLElement>(".home-sticker-spin") ?? sticker;
+    const bounds = visibleSticker.getBoundingClientRect();
     return {
       minimumX: translation.x + VIEWPORT_PADDING - bounds.left,
       maximumX:
@@ -308,7 +310,7 @@ export const initHomeSticker = (sticker: HTMLElement): StickerCleanup => {
     );
   };
 
-  /** 只结束当前指针捕获；pointerup 会在随后决定点击旋转或拖拽归位。 */
+  /** 只结束当前指针捕获；pointerup 会在随后决定点击旋转或保留拖拽位置。 */
   const finishPointerInteraction = (): void => {
     const pointerId = activePointerId;
     activePointerId = null;
@@ -318,17 +320,23 @@ export const initHomeSticker = (sticker: HTMLElement): StickerCleanup => {
     }
   };
 
-  /** 松手后立即把位移目标设回锚点，CSS 只负责这一层的平滑回弹。 */
-  const returnTranslationHome = (): void => {
-    translation = { x: 0, y: 0 };
-    renderTranslation();
-  };
-
-  /** 中断交互时只归位位置并停住旋转，已经形成的视觉角度始终保留。 */
-  const stopMotionAndReturnHome = (): void => {
+  /** 中断交互时停住运动，但完整保留用户已经摆放的位置与视觉角度。 */
+  const stopMotionPreservingPose = (): void => {
     finishPointerInteraction();
     stopRotationPreservingAngle();
-    translation = { x: 0, y: 0 };
+    renderTranslation();
+    clearPointerPressure();
+  };
+
+  /** 视口变化时只把贴纸夹回可见范围，不把它送回初始右上角。 */
+  const keepPoseInsideViewport = (): void => {
+    finishPointerInteraction();
+    stopRotationPreservingAngle();
+    translation = readRenderedTranslation();
+    translation = clampStickerTranslation(
+      translation,
+      readTranslationBounds(),
+    );
     renderTranslation();
     clearPointerPressure();
   };
@@ -396,7 +404,7 @@ export const initHomeSticker = (sticker: HTMLElement): StickerCleanup => {
     if (activePointerId === null) clearPointerPressure();
   };
 
-  /** 松手后拖拽只归位；只有未超过阈值的单击才启动随机交替旋转。 */
+  /** 松手后保留拖拽终点；只有未超过阈值的单击才启动随机交替旋转。 */
   const handlePointerUp = (event: PointerEvent): void => {
     if (event.pointerId !== activePointerId) return;
 
@@ -409,8 +417,17 @@ export const initHomeSticker = (sticker: HTMLElement): StickerCleanup => {
     );
     hasDragged = hasDragged || !isStickerClickGesture(maximumPointerTravel);
     const shouldRotate = !hasDragged;
+    if (hasDragged) {
+      translation = clampStickerTranslation(
+        {
+          x: translationOrigin.x + event.clientX - pointerOrigin.x,
+          y: translationOrigin.y + event.clientY - pointerOrigin.y,
+        },
+        translationBounds,
+      );
+      renderTranslation();
+    }
     finishPointerInteraction();
-    returnTranslationHome();
     if (shouldRotate) {
       renderPointerPressure(event);
       startClickRotation();
@@ -419,21 +436,21 @@ export const initHomeSticker = (sticker: HTMLElement): StickerCleanup => {
     }
   };
 
-  /** 系统取消手势时不制造虚假惯性，直接安全归位。 */
+  /** 系统取消手势时不制造虚假惯性，停在最后收到的安全位置。 */
   const handlePointerCancel = (event: PointerEvent): void => {
-    if (event.pointerId === activePointerId) stopMotionAndReturnHome();
+    if (event.pointerId === activePointerId) stopMotionPreservingPose();
   };
 
-  /** 捕获被浏览器意外夺走时执行兜底归位，正常释放因编号已清空不会重复处理。 */
+  /** 捕获被浏览器意外夺走时保留当前姿态，正常释放因编号已清空不会重复处理。 */
   const handleLostPointerCapture = (event: PointerEvent): void => {
-    if (event.pointerId === activePointerId) stopMotionAndReturnHome();
+    if (event.pointerId === activePointerId) stopMotionPreservingPose();
   };
 
   /** 键盘激活键复用点击旋转序列，Escape 停住运动但保留角度。 */
   const handleKeyDown = (event: KeyboardEvent): void => {
     if (event.key === "Escape") {
       event.preventDefault();
-      stopMotionAndReturnHome();
+      stopMotionPreservingPose();
       return;
     }
 
@@ -443,12 +460,12 @@ export const initHomeSticker = (sticker: HTMLElement): StickerCleanup => {
     }
   };
 
-  /** 视口或动态偏好变化会停住运动并归位位置，但不改变已经形成的角度。 */
-  const handleEnvironmentChange = (): void => stopMotionAndReturnHome();
+  /** 动态偏好或窗口焦点变化只停住运动，当前位置与角度都保持不变。 */
+  const handleEnvironmentChange = (): void => stopMotionPreservingPose();
 
-  /** 页面进入后台时同步归位，重新显示时不会继续过期的惯性帧。 */
+  /** 页面进入后台时停住运动，重新显示时不会续播过期惯性，也不会丢失姿态。 */
   const handleVisibilityChange = (): void => {
-    if (document.hidden) stopMotionAndReturnHome();
+    if (document.hidden) stopMotionPreservingPose();
   };
 
   /** 幂等移除所有监听器和动画，并恢复服务端渲染时的初始样式。 */
@@ -479,7 +496,7 @@ export const initHomeSticker = (sticker: HTMLElement): StickerCleanup => {
   });
   sticker.addEventListener("keydown", handleKeyDown, { signal });
   window.addEventListener("blur", handleEnvironmentChange, { signal });
-  window.addEventListener("resize", handleEnvironmentChange, {
+  window.addEventListener("resize", keepPoseInsideViewport, {
     passive: true,
     signal,
   });

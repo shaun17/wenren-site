@@ -46,28 +46,28 @@ test("maps the pointer position to a stable pressed sticker pose", () => {
   });
   assert.deepEqual(mapStickerPressure({ x: 220, y: 110 }, bounds), {
     tiltX: 0,
-    tiltY: 4,
+    tiltY: 6,
   });
   assert.deepEqual(mapStickerPressure({ x: 100, y: 110 }, bounds), {
     tiltX: 0,
-    tiltY: -4,
+    tiltY: -6,
   });
   assert.deepEqual(mapStickerPressure({ x: 160, y: 50 }, bounds), {
-    tiltX: 4,
+    tiltX: 6,
     tiltY: 0,
   });
   assert.deepEqual(mapStickerPressure({ x: 160, y: 170 }, bounds), {
-    tiltX: -4,
+    tiltX: -6,
     tiltY: 0,
   });
 
   const cornerPose = mapStickerPressure({ x: 220, y: 50 }, bounds);
-  assert.ok(Math.abs(cornerPose.tiltX - Math.SQRT2 * 2) < 0.000_001);
-  assert.ok(Math.abs(cornerPose.tiltY - Math.SQRT2 * 2) < 0.000_001);
-  assert.ok(Math.hypot(cornerPose.tiltX, cornerPose.tiltY) <= 4);
+  assert.ok(Math.abs(cornerPose.tiltX - Math.SQRT2 * 3) < 0.000_001);
+  assert.ok(Math.abs(cornerPose.tiltY - Math.SQRT2 * 3) < 0.000_001);
+  assert.ok(Math.hypot(cornerPose.tiltX, cornerPose.tiltY) <= 6);
 
   const rotatedPose = mapStickerPressure({ x: 220, y: 110 }, bounds, 90);
-  assert.ok(Math.abs(rotatedPose.tiltX - 4) < 0.000_001);
+  assert.ok(Math.abs(rotatedPose.tiltX - 6) < 0.000_001);
   assert.ok(Math.abs(rotatedPose.tiltY) < 0.000_001);
 });
 
@@ -154,7 +154,7 @@ test("wires drag-only movement and click-only rotation", async () => {
   assert.match(component, /home-sticker-surface/);
   assert.match(
     component,
-    /拖动后松开只归位位置并保留角度；单击以随机速度旋转，方向逐次交替/,
+    /拖动后停在释放位置并保留角度；单击以随机速度旋转，方向逐次交替/,
   );
   assert.match(component, /draggable="false"/);
   assert.match(homepage, /<HomeSticker \/>/);
@@ -164,14 +164,28 @@ test("wires drag-only movement and click-only rotation", async () => {
   assert.match(interaction, /isStickerClickGesture\(maximumPointerTravel\)/);
   assert.match(interaction, /hasDragged = hasDragged \|\|/);
   assert.match(interaction, /requestAnimationFrame\(inertiaFrame\)/);
-  assert.match(interaction, /returnTranslationHome\(\);/);
+  assert.match(interaction, /stopMotionPreservingPose/);
+  assert.match(interaction, /keepPoseInsideViewport/);
   assert.match(interaction, /stopRotationPreservingAngle/);
+  assert.match(
+    interaction,
+    /if \(hasDragged\)[\s\S]*translationOrigin\.x \+ event\.clientX - pointerOrigin\.x[\s\S]*renderTranslation\(\);[\s\S]*finishPointerInteraction\(\);/,
+  );
+  assert.match(
+    interaction,
+    /querySelector<HTMLElement>\("\.home-sticker-spin"\)/,
+  );
+  assert.doesNotMatch(interaction, /translation\s*=\s*\{\s*x:\s*0,\s*y:\s*0\s*\};/);
   assert.doesNotMatch(
     interaction,
-    /estimateStickerPointerVelocity|calculateStickerAngularVelocity|recordPointerSamples|handleDocumentPointerDown|handleWheel|settleRotation|readStickerRestRotation/,
+    /estimateStickerPointerVelocity|calculateStickerAngularVelocity|recordPointerSamples|handleDocumentPointerDown|handleWheel|settleRotation|readStickerRestRotation|returnTranslationHome|stopMotionAndReturnHome/,
   );
   assert.match(styles, /\.home-sticker-spin/);
   assert.match(styles, /perspective\(24rem\)/);
+  assert.match(
+    styles,
+    /transition:\s*transform 240ms cubic-bezier\(0\.22, 1, 0\.36, 1\)/,
+  );
   assert.match(styles, /transform-origin:\s*center/);
   assert.match(styles, /\.home-sticker-spin::before[\s\S]*pointer-events:\s*auto/);
   assert.match(
