@@ -436,6 +436,20 @@ test("builds the isolated spatial portrait page without changing the homepage", 
     /<div class="spatial-directory-story" data-spatial-directory-surface>([\s\S]*?)<\/div><\/div><\/main>/,
   )?.[1];
   assert.ok(directorySurface, "三个目录章节必须共用一个连续背景容器");
+  assert.equal(
+    (
+      directorySurface.match(
+        /<div class="spatial-directory-focus-veil" aria-hidden="true"><\/div>/g,
+      ) ?? []
+    ).length,
+    1,
+    "目录共享容器必须只包含一个不参与语义的视口焦点层",
+  );
+  assert.ok(
+    directorySurface.indexOf("spatial-directory-focus-veil") <
+      directorySurface.indexOf('data-spatial-chapter="1"'),
+    "视口焦点层必须先于三个目录章节绘制",
+  );
   assert.deepEqual(
     [...directorySurface.matchAll(/data-spatial-chapter="(\d+)"/g)].map(
       (match) => match[1],
