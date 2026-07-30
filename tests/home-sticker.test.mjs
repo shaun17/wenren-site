@@ -5,6 +5,7 @@ import test from "node:test";
 import sharp from "sharp";
 import {
   clampStickerTranslation,
+  clampStickerTranslationAfterViewportResize,
   decayStickerAngularVelocity,
   isStickerClickGesture,
   mapStickerPressure,
@@ -34,6 +35,22 @@ test("keeps sticker translation inside the visible viewport bounds", () => {
       { minimumX: 20, maximumX: -20, minimumY: 30, maximumY: -30 },
     ),
     { x: 5, y: 10 },
+  );
+});
+
+/** 手机地址栏造成高度变化时保留文档纵向落点，只修正横向越界。 */
+test("keeps the document position stable across a scrolled viewport resize", () => {
+  assert.deepEqual(
+    clampStickerTranslationAfterViewportResize(
+      { x: -441, y: 101 },
+      {
+        minimumX: -260.85,
+        maximumX: 0,
+        minimumY: 366.75,
+        maximumY: 1_025,
+      },
+    ),
+    { x: -260.85, y: 101 },
   );
 });
 
@@ -165,7 +182,8 @@ test("wires drag-only movement and click-only rotation", async () => {
   assert.match(interaction, /hasDragged = hasDragged \|\|/);
   assert.match(interaction, /requestAnimationFrame\(inertiaFrame\)/);
   assert.match(interaction, /stopMotionPreservingPose/);
-  assert.match(interaction, /keepPoseInsideViewport/);
+  assert.match(interaction, /keepPoseInsidePageWidth/);
+  assert.match(interaction, /clampStickerTranslationAfterViewportResize/);
   assert.match(interaction, /stopRotationPreservingAngle/);
   assert.match(
     interaction,
@@ -178,7 +196,7 @@ test("wires drag-only movement and click-only rotation", async () => {
   assert.doesNotMatch(interaction, /translation\s*=\s*\{\s*x:\s*0,\s*y:\s*0\s*\};/);
   assert.doesNotMatch(
     interaction,
-    /estimateStickerPointerVelocity|calculateStickerAngularVelocity|recordPointerSamples|handleDocumentPointerDown|handleWheel|settleRotation|readStickerRestRotation|returnTranslationHome|stopMotionAndReturnHome/,
+    /estimateStickerPointerVelocity|calculateStickerAngularVelocity|recordPointerSamples|handleDocumentPointerDown|handleWheel|settleRotation|readStickerRestRotation|returnTranslationHome|stopMotionAndReturnHome|keepPoseInsideViewport/,
   );
   assert.match(styles, /\.home-sticker-spin/);
   assert.match(styles, /perspective\(24rem\)/);

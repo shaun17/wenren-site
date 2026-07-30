@@ -57,6 +57,20 @@ export const clampStickerTranslation = (
 };
 
 /**
+ * 浏览器尺寸变化只修正横向越界；纵向位置属于页面文档坐标，
+ * 不能因手机滚动后地址栏收起触发 resize，就被吸附到当前正文视口。
+ */
+export const clampStickerTranslationAfterViewportResize = (
+  translation: StickerTranslation,
+  bounds: StickerTranslationBounds,
+): StickerTranslation =>
+  clampStickerTranslation(translation, {
+    ...bounds,
+    minimumY: translation.y,
+    maximumY: translation.y,
+  });
+
+/**
  * 把屏幕中的鼠标落点反向旋转到贴纸局部坐标，再映射为静态 3D 压感。
  * 倾斜总量采用径向上限，角落不会叠加成夸张折角；中心支点让落点侧缩小、对侧放大。
  */
@@ -328,12 +342,12 @@ export const initHomeSticker = (sticker: HTMLElement): StickerCleanup => {
     clearPointerPressure();
   };
 
-  /** 视口变化时只把贴纸夹回可见范围，不把它送回初始右上角。 */
-  const keepPoseInsideViewport = (): void => {
+  /** 视口变化时只修正横向越界，纵向文档位置与完整视觉角度保持不变。 */
+  const keepPoseInsidePageWidth = (): void => {
     finishPointerInteraction();
     stopRotationPreservingAngle();
     translation = readRenderedTranslation();
-    translation = clampStickerTranslation(
+    translation = clampStickerTranslationAfterViewportResize(
       translation,
       readTranslationBounds(),
     );
@@ -496,7 +510,7 @@ export const initHomeSticker = (sticker: HTMLElement): StickerCleanup => {
   });
   sticker.addEventListener("keydown", handleKeyDown, { signal });
   window.addEventListener("blur", handleEnvironmentChange, { signal });
-  window.addEventListener("resize", keepPoseInsideViewport, {
+  window.addEventListener("resize", keepPoseInsidePageWidth, {
     passive: true,
     signal,
   });
