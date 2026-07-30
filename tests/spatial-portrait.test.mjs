@@ -504,11 +504,6 @@ test("anchors directory chapters over a right-side reading surface", async () =>
   )?.[1];
   assert.ok(directoryStoryRule, "目录章节必须保留共享背景容器");
   assert.match(directoryStoryRule, /position:\s*relative;/);
-  assert.match(
-    directoryStoryRule,
-    /--spatial-directory-handoff-height:\s*clamp\(7rem,\s*20svh,\s*11rem\);/,
-    "About 与目录交接必须预留独立渐变距离",
-  );
   assert.doesNotMatch(
     directoryStoryRule,
     /z-index:|isolation:|transform:|filter:|opacity:|overflow:/,
@@ -545,25 +540,10 @@ test("anchors directory chapters over a right-side reading surface", async () =>
     /\.spatial-chapter-directory::before\s*\{/,
     "目录章节不得各自绘制背景，否则交界处会重复渐隐露底",
   );
-  const directoryHandoffRule = styles.match(
-    /\.spatial-directory-story::after\s*\{([\s\S]*?)\n\}/,
-  )?.[1];
-  assert.ok(directoryHandoffRule, "About 与第一组目录之间必须保留独立交接渐变");
-  for (const declaration of [
-    /position:\s*absolute;/,
-    /top:\s*calc\(-1 \* var\(--spatial-directory-handoff-height\)\);/,
-    /z-index:\s*4;/,
-    /height:\s*var\(--spatial-directory-handoff-height\);/,
-    /pointer-events:\s*none;/,
-    /(?:^|\n)\s*mask-image:\s*linear-gradient\(\s*90deg,/,
-    /(?:^|\n)\s*-webkit-mask-image:\s*linear-gradient\(\s*90deg,/,
-  ]) {
-    assert.match(directoryHandoffRule, declaration);
-  }
-  assert.match(
-    directoryHandoffRule,
-    /linear-gradient\(\s*180deg,\s*transparent 0%,\s*rgba\(239, 235, 225, 0\.24\) 32%,\s*rgba\(239, 235, 225, 0\.78\) 70%,\s*rgba\(239, 235, 225, 0\.98\) 100%/,
-    "交接层必须从 About 背景渐入到目录焦点层的起始底色",
+  assert.doesNotMatch(
+    styles,
+    /\.spatial-directory-story::after\s*\{/,
+    "About 与目录之间不得绘制会在首屏形成白色横带的独立覆盖层",
   );
   const focusVeilRule = styles.match(
     /\.spatial-directory-focus-veil\s*\{([\s\S]*?)\n\}/,
@@ -617,12 +597,12 @@ test("anchors directory chapters over a right-side reading surface", async () =>
   );
   assert.match(
     styles,
-    /@media \(max-height: 600px\)[\s\S]*?\.spatial-directory-story::after\s*\{\s*content:\s*none;[\s\S]*?\.spatial-directory-focus-veil\s*\{\s*display:\s*none;[\s\S]*?@media \(min-width: 801px\) and \(max-height: 600px\) and \(prefers-reduced-motion: no-preference\)\s*\{\s*html:has\(\.spatial-page\)\s*\{\s*scroll-snap-type:\s*none;/,
+    /@media \(max-height: 600px\)[\s\S]*?\.spatial-directory-focus-veil\s*\{\s*display:\s*none;[\s\S]*?@media \(min-width: 801px\) and \(max-height: 600px\) and \(prefers-reduced-motion: no-preference\)\s*\{\s*html:has\(\.spatial-page\)\s*\{\s*scroll-snap-type:\s*none;/,
     "横屏短视口必须关闭焦点渐变与自动吸附",
   );
   assert.match(
     styles,
-    /@media \(max-width: 800px\)[\s\S]*?\.spatial-directory-story::before\s*\{\s*content:\s*none;[\s\S]*?\.spatial-directory-story::after\s*\{\s*content:\s*none;[\s\S]*?\.spatial-directory-focus-veil\s*\{\s*display:\s*none;/,
+    /@media \(max-width: 800px\)[\s\S]*?\.spatial-directory-story::before\s*\{\s*content:\s*none;[\s\S]*?\.spatial-directory-focus-veil\s*\{\s*display:\s*none;/,
     "窄屏不得叠加桌面右半屏背景与视口渐变",
   );
   assert.match(
@@ -632,7 +612,7 @@ test("anchors directory chapters over a right-side reading surface", async () =>
   );
   assert.match(
     styles,
-    /@media \(prefers-reduced-motion: reduce\)[\s\S]*?scroll-snap-type:\s*none;[\s\S]*?\.spatial-directory-focus-veil\s*\{\s*display:\s*none;[\s\S]*?\.spatial-directory-story::after\s*\{\s*content:\s*none;[\s\S]*?\.spatial-copy-intro,[\s\S]*?\.spatial-scroll-cue\s*\{\s*opacity:\s*1;/,
+    /@media \(prefers-reduced-motion: reduce\)[\s\S]*?scroll-snap-type:\s*none;[\s\S]*?\.spatial-directory-focus-veil\s*\{\s*display:\s*none;[\s\S]*?\.spatial-copy-intro,[\s\S]*?\.spatial-scroll-cue\s*\{\s*opacity:\s*1;/,
     "减少动态时必须关闭吸附和全部滚动渐隐",
   );
 

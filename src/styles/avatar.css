@@ -360,7 +360,6 @@
 
 /* 三个目录章节共用一张底色，只在整组首尾和左缘渐隐，章节交界不再露底。 */
 .spatial-directory-story {
-  --spatial-directory-handoff-height: clamp(7rem, 20svh, 11rem);
   position: relative;
 }
 
@@ -409,42 +408,6 @@
       rgba(0, 0, 0, 0.22) calc(100% - 3svh),
       transparent 100%
     );
-}
-
-/*
- * 目录焦点层从 About 下缘直接出现会形成横向断层；这里用同一底色反向渐入，
- * 让 About 的淡出、人物换位和第一组目录的淡入在同一段滚动距离内完成。
- */
-.spatial-directory-story::after {
-  position: absolute;
-  top: calc(-1 * var(--spatial-directory-handoff-height));
-  right: 0;
-  left: 0;
-  z-index: 4;
-  height: var(--spatial-directory-handoff-height);
-  background: linear-gradient(
-    180deg,
-    transparent 0%,
-    rgba(239, 235, 225, 0.24) 32%,
-    rgba(239, 235, 225, 0.78) 70%,
-    rgba(239, 235, 225, 0.98) 100%
-  );
-  content: "";
-  pointer-events: none;
-  -webkit-mask-image: linear-gradient(
-    90deg,
-    transparent 0 43%,
-    rgba(0, 0, 0, 0.2) 47%,
-    rgba(0, 0, 0, 0.61) 53%,
-    #000 61% 100%
-  );
-  mask-image: linear-gradient(
-    90deg,
-    transparent 0 43%,
-    rgba(0, 0, 0, 0.2) 47%,
-    rgba(0, 0, 0, 0.61) 53%,
-    #000 61% 100%
-  );
 }
 
 /*
@@ -759,10 +722,6 @@
     content: none;
   }
 
-  .spatial-directory-story::after {
-    content: none;
-  }
-
   .spatial-directory-focus-veil {
     display: none;
   }
@@ -832,10 +791,6 @@
 
 /* 横屏短视口保留完整目录内容，避免上下渐变压住标题或末行链接。 */
 @media (max-height: 600px) {
-  .spatial-directory-story::after {
-    content: none;
-  }
-
   .spatial-directory-focus-veil {
     display: none;
   }
@@ -848,10 +803,6 @@
 
   .spatial-directory-focus-veil {
     display: none;
-  }
-
-  .spatial-directory-story::after {
-    content: none;
   }
 
   .spatial-copy-intro,
