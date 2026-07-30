@@ -118,6 +118,7 @@ test("alternates click rotation direction every time", () => {
 /** 惯性阻尼与帧率无关，并始终保持原旋转方向直到停止。 */
 test("decays angular velocity consistently across frame rates", () => {
   const oneStep = decayStickerAngularVelocity(900, 1);
+  const expectedOneStep = 900 * Math.exp(-2.2);
   let sixtySteps = 900;
   for (let frame = 0; frame < 60; frame += 1) {
     sixtySteps = decayStickerAngularVelocity(sixtySteps, 1 / 60);
@@ -125,6 +126,7 @@ test("decays angular velocity consistently across frame rates", () => {
 
   assert.ok(oneStep > 0);
   assert.ok(oneStep < 900);
+  assert.ok(Math.abs(oneStep - expectedOneStep) < 0.000_001);
   assert.ok(Math.abs(oneStep - sixtySteps) < 0.000_001);
   assert.ok(decayStickerAngularVelocity(-900, 0.5) < 0);
   assert.equal(normalizeStickerRotation(725), 5);
@@ -181,6 +183,16 @@ test("wires drag-only movement and click-only rotation", async () => {
   assert.match(interaction, /isStickerClickGesture\(maximumPointerTravel\)/);
   assert.match(interaction, /hasDragged = hasDragged \|\|/);
   assert.match(interaction, /requestAnimationFrame\(inertiaFrame\)/);
+  assert.match(interaction, /const ANGULAR_DAMPING = 2\.2/);
+  assert.match(interaction, /const MAX_INERTIA_DURATION_MS = 2_400/);
+  assert.match(
+    interaction,
+    /now - startTime >= MAX_INERTIA_DURATION_MS/,
+  );
+  assert.match(
+    interaction,
+    /startInertialRotation\(speed \* nextClickRotationDirection\)[\s\S]*readOppositeStickerRotationDirection/,
+  );
   assert.match(interaction, /stopMotionPreservingPose/);
   assert.match(interaction, /keepPoseInsidePageWidth/);
   assert.match(interaction, /clampStickerTranslationAfterViewportResize/);
