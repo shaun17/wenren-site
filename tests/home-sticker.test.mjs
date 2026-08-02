@@ -314,8 +314,11 @@ test("keeps rotated default sticker coverage below one half", () => {
   assert.ok(maximumCoverage <= 0.5, `最大联合覆盖率为 ${maximumCoverage}`);
 });
 
-/** 七张公开贴纸必须保留透明轮廓与内容哈希，并共同控制在轻量首屏预算内。 */
-test("ships seven compact transparent sticker assets", async () => {
+/** 三张品牌方卡保留完整底板，其余异形贴纸继续使用透明轮廓。 */
+const CARD_STICKER_IDS = new Set(["petly", "green-orbit", "pagecomet"]);
+
+/** 七张公开贴纸必须符合各自轮廓契约与内容哈希，并共同控制在轻量首屏预算内。 */
+test("ships seven compact sticker assets with intentional silhouettes", async () => {
   assert.equal(HOME_STICKER_DEFINITIONS.length, 7);
   assert.equal(
     new Set(HOME_STICKER_DEFINITIONS.map((sticker) => sticker.id)).size,
@@ -325,6 +328,15 @@ test("ships seven compact transparent sticker assets", async () => {
     new Set(HOME_STICKER_DEFINITIONS.map((sticker) => sticker.asset)).size,
     7,
   );
+  const shippedStickerFiles = (await readdir(
+    new URL("../public/stickers/", import.meta.url),
+  ))
+    .filter((file) => /\.(?:png|webp)$/.test(file))
+    .sort();
+  const definedStickerFiles = HOME_STICKER_DEFINITIONS.map((sticker) =>
+    sticker.asset.split("/").at(-1),
+  ).sort();
+  assert.deepEqual(shippedStickerFiles, definedStickerFiles);
 
   let totalBytes = 0;
   for (const sticker of HOME_STICKER_DEFINITIONS) {
@@ -335,29 +347,32 @@ test("ships seven compact transparent sticker assets", async () => {
     ]);
     const metadata = await sharp(body).metadata();
     const expectedHash = sticker.asset.match(/-([a-f0-9]{12})\.(?:png|webp)$/)?.[1];
+    const { data, info } = await sharp(body)
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    let visiblePixels = 0;
+    for (let index = 3; index < data.length; index += info.channels) {
+      if (data[index] > 8) visiblePixels += 1;
+    }
+    const visibleRatio = visiblePixels / (info.width * info.height);
 
     totalBytes += file.size;
     assert.equal(metadata.width, sticker.width);
     assert.equal(metadata.height, sticker.height);
-    assert.equal(metadata.hasAlpha, true);
     assert.ok(file.size < 50 * 1024, `${sticker.id} 应小于 50 KiB`);
     assert.equal(
       createHash("sha256").update(body).digest("hex").slice(0, 12),
       expectedHash,
     );
 
-    if (sticker.id === "pagecomet") {
-      const { data, info } = await sharp(body)
-        .ensureAlpha()
-        .raw()
-        .toBuffer({ resolveWithObject: true });
-      let visiblePixels = 0;
-      for (let index = 3; index < data.length; index += info.channels) {
-        if (data[index] > 8) visiblePixels += 1;
-      }
-      const visibleRatio = visiblePixels / (info.width * info.height);
-      assert.ok(visibleRatio > 0.12, "PageComet 自由轮廓不能小到难以辨认");
-      assert.ok(visibleRatio < 0.35, "PageComet 不能重新退化成矩形图标");
+    if (CARD_STICKER_IDS.has(sticker.id)) {
+      assert.equal(metadata.hasAlpha, false, `${sticker.id} 应保留完整方卡`);
+      assert.ok(visibleRatio > 0.99, `${sticker.id} 不应被再次抠成异形轮廓`);
+    } else {
+      assert.equal(metadata.hasAlpha, true, `${sticker.id} 应保留透明轮廓`);
+      assert.ok(visibleRatio > 0.1, `${sticker.id} 不能小到难以辨认`);
+      assert.ok(visibleRatio < 0.9, `${sticker.id} 不应退化成矩形底图`);
     }
   }
   assert.ok(totalBytes < 160 * 1024, "七张贴纸首屏总量应小于 160 KiB");
