@@ -543,8 +543,26 @@ test("wires drag-only movement and click-only rotation", async () => {
     /estimateStickerPointerVelocity|calculateStickerAngularVelocity|recordPointerSamples|handleDocumentPointerDown|handleWheel|settleRotation|readStickerRestRotation|returnTranslationHome|stopMotionAndReturnHome|keepPoseInsideViewport/,
   );
   assert.match(styles, /\.home-sticker-spin/);
-  assert.match(styles, /pointer-events:\s*auto/);
-  assert.match(styles, /memo-logo[\s\S]*clip-path:\s*inset\(19% 0\)/);
+  assert.match(
+    styles,
+    /\.home-sticker\s*\{[^}]*pointer-events:\s*auto/,
+  );
+  assert.match(
+    styles,
+    /\.home-sticker-spin::before\s*\{[^}]*pointer-events:\s*auto[^}]*touch-action:\s*none/,
+  );
+  /** 只有 Mirage 关闭外层方框命中，其余贴纸仍可从完整可见边缘抓取。 */
+  assert.match(
+    styles,
+    /\.home-sticker\[data-sticker-id=["']memo-logo["']\]\s*\{[^}]*pointer-events:\s*none/,
+  );
+  /** Mirage 只缩窄随旋转层同步转动的命中区域，不再裁剪视觉内容。 */
+  assert.match(
+    styles,
+    /\.home-sticker\[data-sticker-id=["']memo-logo["']\] \.home-sticker-spin::before\s*\{[^}]*inset:\s*21% 4%/,
+  );
+  /** Mirage 不能再被外层固定矩形裁剪，否则竖向角度会切掉图形。 */
+  assert.doesNotMatch(styles, /clip-path\s*:/);
   assert.match(styles, /z-index:\s*var\(--sticker-layer\)/);
   assert.match(styles, /isolation:\s*isolate/);
   assert.match(styles, /perspective\(24rem\)/);

@@ -67,18 +67,25 @@
   will-change: transform;
 }
 
-/* 旋转后的可见边角可能超出按钮原方框；透明命中层跟随角度，保证这些边角仍可拖动与悬浮。 */
+/* 视觉层不参与命中；透明命中层跟随旋转，避免用固定外框裁掉旋转后的图形。 */
 .home-sticker-spin::before {
   position: absolute;
   inset: 8%;
   border-radius: 26%;
   content: "";
   pointer-events: auto;
+  touch-action: none;
 }
 
-/* 横向 M 图形裁掉透明上下命中区，露出的下层贴纸仍可直接抓取。 */
+/* Mirage 关闭外层方框命中，只保留随图形旋转的透明命中层。 */
 .home-sticker[data-sticker-id="memo-logo"] {
-  clip-path: inset(19% 0);
+  pointer-events: none;
+}
+
+/* 横向图形的命中范围贴合其透明轮廓，不裁剪可见 Logo 与阴影。 */
+.home-sticker[data-sticker-id="memo-logo"] .home-sticker-spin::before {
+  inset: 21% 4%;
+  border-radius: 20%;
 }
 
 /* 以中心为支点做轻微透视：鼠标侧远离变小，对侧靠近变大，不缩放整张贴纸。 */
