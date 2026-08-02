@@ -1,43 +1,57 @@
 ---
 import "../styles/home-sticker.css";
+import { HOME_STICKER_DEFINITIONS } from "../lib/home-sticker";
 
-const stickerAsset = "/stickers/mcdonald-logo-sticker-705aee4ab869.png";
 const stickerInstructions =
-  "拖动后停在释放位置并保留角度；单击以随机速度旋转，方向逐次交替";
+  "拖动后停在释放位置并可任意覆盖其他贴纸；单击以随机速度旋转，方向逐次交替";
 ---
 
-<div class="home-sticker-anchor">
-  <button
-    class="home-sticker"
-    type="button"
-    aria-label={`麦当劳金色拱门贴纸。${stickerInstructions}`}
-    aria-keyshortcuts="Escape Enter Space"
-    data-home-sticker
-  >
-    <span class="home-sticker-spin" aria-hidden="true">
-      <span class="home-sticker-surface">
-        <img
-          src={stickerAsset}
-          width="512"
-          height="512"
-          alt=""
-          loading="eager"
-          decoding="async"
-          draggable="false"
-        />
-      </span>
-    </span>
-  </button>
+<div
+  class="home-sticker-anchor"
+  role="group"
+  aria-label="可拖动与旋转的贴纸组"
+  data-home-sticker-deck
+>
+  {
+    HOME_STICKER_DEFINITIONS.map((sticker) => (
+      <button
+        class="home-sticker"
+        type="button"
+        aria-label={`${sticker.label}。${stickerInstructions}`}
+        aria-keyshortcuts="Escape Enter Space"
+        data-home-sticker
+        data-sticker-id={sticker.id}
+        data-sticker-layer={sticker.initialLayer}
+        style={`--sticker-x: ${sticker.initialXPercent}%; --sticker-y: ${sticker.initialYPercent}%; --sticker-layer: ${sticker.initialLayer};`}
+      >
+        <span class="home-sticker-spin" aria-hidden="true">
+          <span class="home-sticker-surface">
+            <img
+              src={sticker.asset}
+              width={sticker.width}
+              height={sticker.height}
+              alt=""
+              loading="eager"
+              decoding="async"
+              draggable="false"
+            />
+          </span>
+        </span>
+      </button>
+    ))
+  }
 </div>
 
 <script>
-  import { initHomeSticker } from "../lib/home-sticker";
+  import { initHomeStickerDeck } from "../lib/home-sticker";
 
-  /** 初始化首页唯一贴纸的自由摆放、局部压感与保留角度的点击旋转。 */
-  const initializeHomeSticker = (): void => {
-    const sticker = document.querySelector<HTMLElement>("[data-home-sticker]");
-    if (sticker) initHomeSticker(sticker);
+  /** 初始化首页贴纸组的自由叠放、局部压感与保留角度的点击旋转。 */
+  const initializeHomeStickerDeck = (): void => {
+    const deck = document.querySelector<HTMLElement>(
+      "[data-home-sticker-deck]",
+    );
+    if (deck) initHomeStickerDeck(deck);
   };
 
-  initializeHomeSticker();
+  initializeHomeStickerDeck();
 </script>

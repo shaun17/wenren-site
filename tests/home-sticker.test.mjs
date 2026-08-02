@@ -1,24 +1,21 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { access, readFile, stat } from "node:fs/promises";
+import { access, readFile, readdir, stat } from "node:fs/promises";
 import test from "node:test";
 import sharp from "sharp";
 import {
   clampStickerTranslation,
   clampStickerTranslationAfterViewportResize,
   decayStickerAngularVelocity,
+  HOME_STICKER_DEFINITIONS,
   isStickerClickGesture,
   mapStickerPressure,
   normalizeStickerRotation,
   readOppositeStickerRotationDirection,
   selectStickerClickRotationSpeed,
+  selectStickerInitialRotation,
   STICKER_CLICK_ROTATION_SPEEDS,
 } from "../src/lib/home-sticker.ts";
-
-const stickerAssetUrl = new URL(
-  "../public/stickers/mcdonald-logo-sticker-705aee4ab869.png",
-  import.meta.url,
-);
 
 /** 位移边界同时覆盖四个方向，并能容忍意外颠倒的边界输入。 */
 test("keeps sticker translation inside the visible viewport bounds", () => {
@@ -134,23 +131,188 @@ test("decays angular velocity consistently across frame rates", () => {
   assert.equal(normalizeStickerRotation(360), 0);
 });
 
-/** 公开资产必须保留透明通道与稳定内容哈希，同时控制首屏下载体积。 */
-test("ships a compact transparent sticker asset", async () => {
-  const [body, file] = await Promise.all([
-    readFile(stickerAssetUrl),
-    stat(stickerAssetUrl),
-  ]);
-  const metadata = await sharp(body).metadata();
+/** 随机初始角度被限制在克制范围内，并允许测试注入确定结果。 */
+test("maps random values to bounded initial sticker rotations", () => {
+  assert.equal(selectStickerInitialRotation(-1), -10);
+  assert.equal(selectStickerInitialRotation(0), -10);
+  assert.equal(selectStickerInitialRotation(0.25), -5);
+  assert.equal(selectStickerInitialRotation(0.5), 0);
+  assert.equal(selectStickerInitialRotation(0.75), 5);
+  assert.equal(selectStickerInitialRotation(1), 10);
+  assert.equal(selectStickerInitialRotation(2), 10);
+});
 
-  assert.equal(metadata.format, "png");
-  assert.equal(metadata.width, 512);
-  assert.equal(metadata.height, 512);
-  assert.equal(metadata.hasAlpha, true);
-  assert.ok(file.size < 50 * 1024, "贴纸首屏资源应小于 50 KiB");
-  assert.equal(
-    createHash("sha256").update(body).digest("hex").slice(0, 12),
-    "705aee4ab869",
+/** 计算单位贴纸在另一张贴纸下方时的轴对齐覆盖率。 */
+const calculatePlacementOverlap = (lowerSticker, upperSticker) => {
+  const overlapWidth = Math.max(
+    0,
+    100 -
+      Math.abs(
+        lowerSticker.initialXPercent - upperSticker.initialXPercent,
+      ),
   );
+  const overlapHeight = Math.max(
+    0,
+    100 -
+      Math.abs(
+        lowerSticker.initialYPercent - upperSticker.initialYPercent,
+      ),
+  );
+  return (overlapWidth * overlapHeight) / 10_000;
+};
+
+/** 默认扇形布局中每张贴纸只与相邻层相交，覆盖面积稳定少于一半。 */
+test("keeps every default sticker overlap below one half", () => {
+  for (const lowerSticker of HOME_STICKER_DEFINITIONS) {
+    const upperStickers = HOME_STICKER_DEFINITIONS.filter(
+      (candidate) => candidate.initialLayer > lowerSticker.initialLayer,
+    );
+    const overlappingStickers = upperStickers.filter(
+      (candidate) => calculatePlacementOverlap(lowerSticker, candidate) > 0,
+    );
+
+    assert.ok(
+      overlappingStickers.length <= 1,
+      `${lowerSticker.id} 默认状态不应同时被多张贴纸遮挡`,
+    );
+    const coverage = overlappingStickers.reduce(
+      (total, candidate) =>
+        total + calculatePlacementOverlap(lowerSticker, candidate),
+      0,
+    );
+    assert.ok(coverage <= 0.5, `${lowerSticker.id} 默认覆盖率为 ${coverage}`);
+  }
+});
+
+/** 把旋转后的正方形贴纸换算为保守的轴对齐包围盒。 */
+const createRotatedPlacementBounds = (sticker, rotation) => {
+  const radians = (rotation * Math.PI) / 180;
+  const size = 100 * (Math.abs(Math.cos(radians)) + Math.abs(Math.sin(radians)));
+  const centerX = sticker.initialXPercent + 50;
+  const centerY = sticker.initialYPercent + 50;
+  return {
+    left: centerX - size / 2,
+    right: centerX + size / 2,
+    top: centerY - size / 2,
+    bottom: centerY + size / 2,
+    width: size,
+    height: size,
+  };
+};
+
+/** 用横向扫描计算多个矩形落在基础矩形内的联合覆盖面积，避免重复区域被多算。 */
+const calculateRectangleUnionArea = (base, covers) => {
+  const clipped = covers
+    .map((cover) => ({
+      left: Math.max(base.left, cover.left),
+      right: Math.min(base.right, cover.right),
+      top: Math.max(base.top, cover.top),
+      bottom: Math.min(base.bottom, cover.bottom),
+    }))
+    .filter((cover) => cover.right > cover.left && cover.bottom > cover.top);
+  const xCoordinates = [
+    ...new Set(clipped.flatMap((cover) => [cover.left, cover.right])),
+  ].sort((left, right) => left - right);
+  let area = 0;
+
+  for (let index = 0; index < xCoordinates.length - 1; index += 1) {
+    const left = xCoordinates[index];
+    const right = xCoordinates[index + 1];
+    const intervals = clipped
+      .filter((cover) => cover.left < right && cover.right > left)
+      .map((cover) => [cover.top, cover.bottom])
+      .sort((first, second) => first[0] - second[0]);
+    let coveredHeight = 0;
+    let intervalStart = null;
+    let intervalEnd = null;
+
+    for (const [top, bottom] of intervals) {
+      if (intervalStart === null) {
+        intervalStart = top;
+        intervalEnd = bottom;
+      } else if (top <= intervalEnd) {
+        intervalEnd = Math.max(intervalEnd, bottom);
+      } else {
+        coveredHeight += intervalEnd - intervalStart;
+        intervalStart = top;
+        intervalEnd = bottom;
+      }
+    }
+    if (intervalStart !== null) coveredHeight += intervalEnd - intervalStart;
+    area += (right - left) * coveredHeight;
+  }
+  return area;
+};
+
+/** 随机角度达到正负十度边界时，所有更高层贴纸的联合包围盒仍不能盖住一半。 */
+test("keeps rotated default sticker coverage below one half", () => {
+  const representativeAngles = [-10, 0, 10];
+  let maximumCoverage = 0;
+
+  /** 穷举六张贴纸的代表角度组合，覆盖范围端点与不旋转状态。 */
+  const verifyRotationCombination = (rotations) => {
+    if (rotations.length < HOME_STICKER_DEFINITIONS.length) {
+      for (const angle of representativeAngles) {
+        verifyRotationCombination([...rotations, angle]);
+      }
+      return;
+    }
+
+    const bounds = HOME_STICKER_DEFINITIONS.map((sticker, index) => ({
+      sticker,
+      bounds: createRotatedPlacementBounds(sticker, rotations[index]),
+    }));
+    for (const lower of bounds) {
+      const upperBounds = bounds
+        .filter(
+          (candidate) =>
+            candidate.sticker.initialLayer > lower.sticker.initialLayer,
+        )
+        .map((candidate) => candidate.bounds);
+      const coverage =
+        calculateRectangleUnionArea(lower.bounds, upperBounds) /
+        (lower.bounds.width * lower.bounds.height);
+      maximumCoverage = Math.max(maximumCoverage, coverage);
+    }
+  };
+
+  verifyRotationCombination([]);
+  assert.ok(maximumCoverage <= 0.5, `最大联合覆盖率为 ${maximumCoverage}`);
+});
+
+/** 六张公开贴纸必须保留透明轮廓与内容哈希，并共同控制在轻量首屏预算内。 */
+test("ships six compact transparent sticker assets", async () => {
+  assert.equal(HOME_STICKER_DEFINITIONS.length, 6);
+  assert.equal(
+    new Set(HOME_STICKER_DEFINITIONS.map((sticker) => sticker.id)).size,
+    6,
+  );
+  assert.equal(
+    new Set(HOME_STICKER_DEFINITIONS.map((sticker) => sticker.asset)).size,
+    6,
+  );
+
+  let totalBytes = 0;
+  for (const sticker of HOME_STICKER_DEFINITIONS) {
+    const assetUrl = new URL(`../public${sticker.asset}`, import.meta.url);
+    const [body, file] = await Promise.all([
+      readFile(assetUrl),
+      stat(assetUrl),
+    ]);
+    const metadata = await sharp(body).metadata();
+    const expectedHash = sticker.asset.match(/-([a-f0-9]{12})\.(?:png|webp)$/)?.[1];
+
+    totalBytes += file.size;
+    assert.equal(metadata.width, sticker.width);
+    assert.equal(metadata.height, sticker.height);
+    assert.equal(metadata.hasAlpha, true);
+    assert.ok(file.size < 50 * 1024, `${sticker.id} 应小于 50 KiB`);
+    assert.equal(
+      createHash("sha256").update(body).digest("hex").slice(0, 12),
+      expectedHash,
+    );
+  }
+  assert.ok(totalBytes < 160 * 1024, "六张贴纸首屏总量应小于 160 KiB");
 });
 
 /** 组件拆分位移、旋转与压感三层，并明确拖拽和点击互斥语义。 */
@@ -168,17 +330,25 @@ test("wires drag-only movement and click-only rotation", async () => {
     readFile(new URL("../src/pages/index.astro", import.meta.url), "utf8"),
   ]);
 
-  assert.match(component, /data-home-sticker/);
+  assert.match(component, /HOME_STICKER_DEFINITIONS\.map/);
+  assert.match(component, /data-home-sticker-deck/);
+  assert.match(component, /data-sticker-id/);
   assert.match(component, /home-sticker-spin/);
   assert.match(component, /home-sticker-surface/);
   assert.match(
     component,
-    /拖动后停在释放位置并保留角度；单击以随机速度旋转，方向逐次交替/,
+    /拖动后停在释放位置并可任意覆盖其他贴纸；单击以随机速度旋转，方向逐次交替/,
   );
   assert.match(component, /draggable="false"/);
   assert.match(homepage, /<HomeSticker \/>/);
+  assert.match(component, /initHomeStickerDeck/);
   assert.match(interaction, /selectStickerClickRotationSpeed/);
-  assert.match(interaction, /Math\.random\(\)/);
+  assert.match(interaction, /selectStickerInitialRotation\(random\(\)\)/);
+  assert.match(interaction, /querySelectorAll<HTMLElement>/);
+  assert.match(interaction, /bringStickerToFront/);
+  assert.match(interaction, /orderedStickers\.push\(activeSticker\)/);
+  assert.match(interaction, /sticker\.addEventListener\("focus"/);
+  assert.match(interaction, /--sticker-layer/);
   assert.match(interaction, /readOppositeStickerRotationDirection/);
   assert.match(interaction, /isStickerClickGesture\(maximumPointerTravel\)/);
   assert.match(interaction, /hasDragged = hasDragged \|\|/);
@@ -211,6 +381,8 @@ test("wires drag-only movement and click-only rotation", async () => {
     /estimateStickerPointerVelocity|calculateStickerAngularVelocity|recordPointerSamples|handleDocumentPointerDown|handleWheel|settleRotation|readStickerRestRotation|returnTranslationHome|stopMotionAndReturnHome|keepPoseInsideViewport/,
   );
   assert.match(styles, /\.home-sticker-spin/);
+  assert.match(styles, /z-index:\s*var\(--sticker-layer\)/);
+  assert.match(styles, /isolation:\s*isolate/);
   assert.match(styles, /perspective\(24rem\)/);
   assert.match(
     styles,
@@ -231,22 +403,34 @@ test("wires drag-only movement and click-only rotation", async () => {
 });
 
 /** 最终静态产物只在首页加载贴纸，内页不会承担无关装饰与交互脚本。 */
-test("renders the sticker only in the built homepage", async () => {
-  const [homepage, avatarPage, headers] = await Promise.all([
+test("renders all six stickers only in the built homepage", async () => {
+  const [homepage, headers, builtFiles] = await Promise.all([
     readFile(new URL("../dist/index.html", import.meta.url), "utf8"),
-    readFile(new URL("../dist/avatar/index.html", import.meta.url), "utf8"),
     readFile(new URL("../dist/_headers", import.meta.url), "utf8"),
-    access(
-      new URL(
-        "../dist/stickers/mcdonald-logo-sticker-705aee4ab869.png",
-        import.meta.url,
-      ),
-    ),
+    readdir(new URL("../dist/", import.meta.url), { recursive: true }),
   ]);
 
-  assert.match(homepage, /data-home-sticker/);
-  assert.match(homepage, /\/stickers\/mcdonald-logo-sticker-705aee4ab869\.png/);
-  assert.doesNotMatch(avatarPage, /data-home-sticker|mcdonald-logo-sticker/);
+  const renderedStickers = homepage.match(
+    /<button[^>]*data-home-sticker(?:\s|>)/g,
+  );
+  assert.equal(renderedStickers?.length, 6);
+  assert.match(homepage, /data-home-sticker-deck/);
+  for (const sticker of HOME_STICKER_DEFINITIONS) {
+    assert.match(homepage, new RegExp(`data-sticker-id="${sticker.id}"`));
+    assert.match(homepage, new RegExp(sticker.asset.replaceAll("/", "\\/")));
+    await access(new URL(`../dist${sticker.asset}`, import.meta.url));
+  }
+
+  const otherHtmlFiles = builtFiles.filter(
+    (file) => file.endsWith(".html") && file !== "index.html",
+  );
+  for (const file of otherHtmlFiles) {
+    const html = await readFile(new URL(`../dist/${file}`, import.meta.url), "utf8");
+    assert.doesNotMatch(html, /data-home-sticker/);
+    for (const sticker of HOME_STICKER_DEFINITIONS) {
+      assert.doesNotMatch(html, new RegExp(sticker.asset.replaceAll("/", "\\/")));
+    }
+  }
   assert.match(
     headers,
     /\/stickers\/\*\s+Cache-Control: public, max-age=31536000, immutable/,
