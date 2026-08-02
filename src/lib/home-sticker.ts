@@ -60,7 +60,7 @@ export const HOME_STICKER_DEFINITIONS = [
   },
   {
     id: "petly",
-    asset: "/stickers/petly-sticker-6fba4f7a8960.webp",
+    asset: "/stickers/petly-sticker-63598930f8a1.webp",
     label: "Petly 品牌贴纸",
     width: 512,
     height: 512,
@@ -80,7 +80,7 @@ export const HOME_STICKER_DEFINITIONS = [
   },
   {
     id: "green-orbit",
-    asset: "/stickers/green-orbit-sticker-b180d66fdb12.webp",
+    asset: "/stickers/green-orbit-sticker-99f9e987e1b3.webp",
     label: "绿色环形标志贴纸",
     width: 512,
     height: 512,
@@ -100,7 +100,7 @@ export const HOME_STICKER_DEFINITIONS = [
   },
   {
     id: "pagecomet",
-    asset: "/stickers/pagecomet-logo-sticker-e2e8307824f4.webp",
+    asset: "/stickers/pagecomet-logo-sticker-dfc485a1d642.webp",
     label: "PageComet 页面彗星标志贴纸",
     width: 512,
     height: 512,

@@ -314,8 +314,11 @@ test("keeps rotated default sticker coverage below one half", () => {
   assert.ok(maximumCoverage <= 0.5, `最大联合覆盖率为 ${maximumCoverage}`);
 });
 
-/** 三张品牌方卡保留完整底板，其余异形贴纸继续使用透明轮廓。 */
+/** 三张品牌方卡只透明外部画布并保留完整圆角底板，其余贴纸继续使用自由轮廓。 */
 const CARD_STICKER_IDS = new Set(["petly", "green-orbit", "pagecomet"]);
+/** 锁定三张方卡共享的透明蒙版，防止圆角附近的白边被局部误删。 */
+const CARD_STICKER_ALPHA_HASH =
+  "45fc932845c77b5b3c9cc85430a406a95e706dd7b3c4f81411148e0ab5c224b2";
 
 /** 七张公开贴纸必须符合各自轮廓契约与内容哈希，并共同控制在轻量首屏预算内。 */
 test("ships seven compact sticker assets with intentional silhouettes", async () => {
@@ -352,8 +355,22 @@ test("ships seven compact sticker assets with intentional silhouettes", async ()
       .raw()
       .toBuffer({ resolveWithObject: true });
     let visiblePixels = 0;
-    for (let index = 3; index < data.length; index += info.channels) {
-      if (data[index] > 8) visiblePixels += 1;
+    const alphaMask = Buffer.alloc(info.width * info.height);
+    let minimumVisibleX = info.width;
+    let minimumVisibleY = info.height;
+    let maximumVisibleX = -1;
+    let maximumVisibleY = -1;
+    for (let y = 0; y < info.height; y += 1) {
+      for (let x = 0; x < info.width; x += 1) {
+        const alphaIndex = (y * info.width + x) * info.channels + 3;
+        alphaMask[y * info.width + x] = data[alphaIndex];
+        if (data[alphaIndex] <= 8) continue;
+        visiblePixels += 1;
+        minimumVisibleX = Math.min(minimumVisibleX, x);
+        minimumVisibleY = Math.min(minimumVisibleY, y);
+        maximumVisibleX = Math.max(maximumVisibleX, x);
+        maximumVisibleY = Math.max(maximumVisibleY, y);
+      }
     }
     const visibleRatio = visiblePixels / (info.width * info.height);
 
@@ -367,8 +384,79 @@ test("ships seven compact sticker assets with intentional silhouettes", async ()
     );
 
     if (CARD_STICKER_IDS.has(sticker.id)) {
-      assert.equal(metadata.hasAlpha, false, `${sticker.id} 应保留完整方卡`);
-      assert.ok(visibleRatio > 0.99, `${sticker.id} 不应被再次抠成异形轮廓`);
+      assert.equal(metadata.hasAlpha, true, `${sticker.id} 应使用透明外部画布`);
+      assert.equal(
+        createHash("sha256").update(alphaMask).digest("hex"),
+        CARD_STICKER_ALPHA_HASH,
+        `${sticker.id} 应使用完整一致的圆角透明蒙版`,
+      );
+      assert.ok(visibleRatio > 0.94, `${sticker.id} 不能被抠成零散图形`);
+      assert.ok(visibleRatio < 0.98, `${sticker.id} 圆角外侧必须保持透明`);
+      assert.ok(
+        maximumVisibleX - minimumVisibleX + 1 >= info.width * 0.98,
+        `${sticker.id} 卡片横向轮廓不能被缩小`,
+      );
+      assert.ok(
+        maximumVisibleY - minimumVisibleY + 1 >= info.height * 0.98,
+        `${sticker.id} 卡片纵向轮廓不能被缩小`,
+      );
+
+      /** 读取指定坐标的 RGBA，统一验证透明角、完整底板和白色边框。 */
+      const readPixel = (x, y) => {
+        const offset = (y * info.width + x) * info.channels;
+        return {
+          red: data[offset],
+          green: data[offset + 1],
+          blue: data[offset + 2],
+          alpha: data[offset + 3],
+        };
+      };
+      const cornerOrigins = [
+        [0, 0],
+        [info.width - 3, 0],
+        [0, info.height - 3],
+        [info.width - 3, info.height - 3],
+      ];
+      for (const [originX, originY] of cornerOrigins) {
+        for (let y = originY; y < originY + 3; y += 1) {
+          for (let x = originX; x < originX + 3; x += 1) {
+            assert.ok(
+              readPixel(x, y).alpha <= 8,
+              `${sticker.id} 四角外部画布必须完全透明`,
+            );
+          }
+        }
+      }
+
+      const insetX = Math.ceil(info.width * 0.08);
+      const insetY = Math.ceil(info.height * 0.08);
+      let internalTransparentPixels = 0;
+      for (let y = insetY; y < info.height - insetY; y += 1) {
+        for (let x = insetX; x < info.width - insetX; x += 1) {
+          if (readPixel(x, y).alpha < 247) internalTransparentPixels += 1;
+        }
+      }
+      assert.equal(
+        internalTransparentPixels,
+        0,
+        `${sticker.id} 卡片内部不能被挖空`,
+      );
+
+      const edgeInset = Math.round(info.width * 0.01);
+      const edgeMidpoints = [
+        [Math.floor(info.width / 2), edgeInset],
+        [info.width - 1 - edgeInset, Math.floor(info.height / 2)],
+        [Math.floor(info.width / 2), info.height - 1 - edgeInset],
+        [edgeInset, Math.floor(info.height / 2)],
+      ];
+      for (const [x, y] of edgeMidpoints) {
+        const pixel = readPixel(x, y);
+        assert.ok(pixel.alpha >= 247, `${sticker.id} 白色边框不能被删除`);
+        assert.ok(
+          Math.min(pixel.red, pixel.green, pixel.blue) > 200,
+          `${sticker.id} 四边中点应保留明亮边框`,
+        );
+      }
     } else {
       assert.equal(metadata.hasAlpha, true, `${sticker.id} 应保留透明轮廓`);
       assert.ok(visibleRatio > 0.1, `${sticker.id} 不能小到难以辨认`);
