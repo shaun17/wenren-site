@@ -348,7 +348,7 @@ test("wires drag-only movement and click-only rotation", async () => {
   assert.match(component, /data-sticker-id/);
   assert.match(component, /data-sticker-default-x/);
   assert.match(component, /data-sticker-default-y/);
-  assert.doesNotMatch(component, /style=\{`--sticker-x:/);
+  assert.doesNotMatch(component, /\sstyle=/);
   assert.match(component, /home-sticker-spin/);
   assert.match(component, /home-sticker-surface/);
   assert.match(
@@ -437,23 +437,31 @@ test("renders all six stickers only in the built homepage", async () => {
   ]);
 
   const renderedStickers = homepage.match(
-    /<button[^>]*data-home-sticker(?:\s|>)/g,
+    /<button\b(?=[^>]*\bdata-home-sticker(?:\s|>))[^>]*>/g,
   );
   assert.equal(renderedStickers?.length, 6);
   assert.match(homepage, /data-home-sticker-deck/);
   for (const sticker of HOME_STICKER_DEFINITIONS) {
-    assert.match(homepage, new RegExp(`data-sticker-id="${sticker.id}"`));
-    assert.match(
-      homepage,
-      new RegExp(`data-sticker-id="${sticker.id}"[^>]*data-sticker-default-x="${sticker.initialXPercent}"[^>]*data-sticker-default-y="${sticker.initialYPercent}"`),
+    const renderedSticker = renderedStickers?.find((tag) =>
+      tag.includes(`data-sticker-id="${sticker.id}"`),
     );
+    assert.ok(renderedSticker, `${sticker.id} 应完整输出为贴纸按钮`);
+    assert.match(
+      renderedSticker,
+      new RegExp(`data-sticker-default-x="${sticker.initialXPercent}"`),
+    );
+    assert.match(
+      renderedSticker,
+      new RegExp(`data-sticker-default-y="${sticker.initialYPercent}"`),
+    );
+    assert.match(
+      renderedSticker,
+      new RegExp(`data-sticker-layer="${sticker.initialLayer}"`),
+    );
+    assert.doesNotMatch(renderedSticker, /\sstyle=/);
     assert.match(homepage, new RegExp(sticker.asset.replaceAll("/", "\\/")));
     await access(new URL(`../dist${sticker.asset}`, import.meta.url));
   }
-  assert.doesNotMatch(
-    homepage,
-    /<button[^>]*data-home-sticker(?:\s|>)[^>]*style=/,
-  );
 
   const otherHtmlFiles = builtFiles.filter(
     (file) => file.endsWith(".html") && file !== "index.html",
@@ -468,5 +476,9 @@ test("renders all six stickers only in the built homepage", async () => {
   assert.match(
     headers,
     /\/stickers\/\*\s+Cache-Control: public, max-age=31536000, immutable/,
+  );
+  assert.match(
+    headers,
+    /Content-Security-Policy:[^\n]*style-src 'self'(?:;|\n)/,
   );
 });

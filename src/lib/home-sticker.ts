@@ -676,7 +676,7 @@ export const initHomeSticker = (
     if (document.hidden) stopMotionPreservingPose();
   };
 
-  /** 幂等移除所有监听器和动画，并恢复服务端渲染时的初始样式。 */
+  /** 幂等移除所有监听器和动画，并恢复服务端数据属性对应的初始静态状态。 */
   const cleanup = (): void => {
     if (isCleaned) return;
     isCleaned = true;
