@@ -44,8 +44,8 @@ interface HomeStickerOptions {
 }
 
 /**
- * 六张贴纸沿右上方向左交错排开。相邻中心横向间隔 58%，第二相邻贴纸已完全错开，
- * 因而默认状态每张只会被下一层遮住约三分之一；用户拖动后则不再做贴纸间避让。
+ * 六张贴纸沿右上方向左松散排开。相邻中心横向间隔 66%，高度各不相同，
+ * 因而默认状态只会轻微遮住相邻贴纸；用户拖动后则不再做贴纸间避让。
  */
 export const HOME_STICKER_DEFINITIONS = [
   {
@@ -55,8 +55,8 @@ export const HOME_STICKER_DEFINITIONS = [
     width: 512,
     height: 512,
     initialXPercent: 0,
-    initialYPercent: 0,
-    initialLayer: 1,
+    initialYPercent: 18,
+    initialLayer: 6,
   },
   {
     id: "memo-logo",
@@ -64,9 +64,9 @@ export const HOME_STICKER_DEFINITIONS = [
     label: "黑色 M 图形贴纸",
     width: 512,
     height: 341,
-    initialXPercent: -58,
-    initialYPercent: 18,
-    initialLayer: 2,
+    initialXPercent: -330,
+    initialYPercent: 0,
+    initialLayer: 1,
   },
   {
     id: "blonde-avatar",
@@ -74,9 +74,9 @@ export const HOME_STICKER_DEFINITIONS = [
     label: "金发人物头像贴纸",
     width: 477,
     height: 512,
-    initialXPercent: -116,
-    initialYPercent: 0,
-    initialLayer: 3,
+    initialXPercent: -66,
+    initialYPercent: 8,
+    initialLayer: 5,
   },
   {
     id: "owl-reader",
@@ -84,9 +84,9 @@ export const HOME_STICKER_DEFINITIONS = [
     label: "猫头鹰读书贴纸",
     width: 512,
     height: 454,
-    initialXPercent: -174,
-    initialYPercent: 18,
-    initialLayer: 4,
+    initialXPercent: -198,
+    initialYPercent: 4,
+    initialLayer: 3,
   },
   {
     id: "petly",
@@ -94,9 +94,9 @@ export const HOME_STICKER_DEFINITIONS = [
     label: "Petly 品牌贴纸",
     width: 512,
     height: 512,
-    initialXPercent: -232,
-    initialYPercent: 0,
-    initialLayer: 5,
+    initialXPercent: -264,
+    initialYPercent: -6,
+    initialLayer: 2,
   },
   {
     id: "green-orbit",
@@ -104,9 +104,9 @@ export const HOME_STICKER_DEFINITIONS = [
     label: "绿色环形标志贴纸",
     width: 512,
     height: 512,
-    initialXPercent: -290,
-    initialYPercent: 18,
-    initialLayer: 6,
+    initialXPercent: -132,
+    initialYPercent: 12,
+    initialLayer: 4,
   },
 ] as const satisfies readonly HomeStickerDefinition[];
 
@@ -122,6 +122,8 @@ const MAX_INERTIA_DURATION_MS = 2_400;
 const PRESS_MAX_TILT = 6;
 const MIN_INITIAL_ROTATION = -10;
 const MAX_INITIAL_ROTATION = 10;
+const KEYBOARD_MOVE_STEP = 12;
+const KEYBOARD_MOVE_STEP_LARGE = 32;
 
 /** 将数值限制在指定闭区间，供所有指针物理计算复用。 */
 const clampNumber = (value: number, minimum: number, maximum: number): number =>
@@ -298,12 +300,25 @@ export const initHomeSticker = (
   let nextClickRotationDirection: StickerRotationDirection = 1;
   let rotationFrame: number | null = null;
   let pressurePointer: StickerTranslation | null = null;
+  let hasCustomPlacement = false;
   let isCleaned = false;
 
   /** 只把持久位移写给按钮外层，让拖拽摆放不干扰内层旋转。 */
   const renderTranslation = (): void => {
     sticker.style.setProperty("--sticker-x", `${translation.x.toFixed(2)}px`);
     sticker.style.setProperty("--sticker-y", `${translation.y.toFixed(2)}px`);
+  };
+
+  /** 未拖动的贴纸始终恢复服务端给出的百分比槽位，横竖屏变化后会随尺寸重新排布。 */
+  const restoreResponsiveDefaultTranslation = (): void => {
+    for (const property of ["--sticker-x", "--sticker-y"] as const) {
+      const initialValue = initialInlinePose.get(property) ?? "";
+      if (initialValue) {
+        sticker.style.setProperty(property, initialValue);
+      } else {
+        sticker.style.removeProperty(property);
+      }
+    }
   };
 
   /** 按当前保留角度重算屏幕落点，旋转后鼠标压下的位置仍与视觉方向一致。 */
@@ -451,7 +466,11 @@ export const initHomeSticker = (
   const stopMotionPreservingPose = (): void => {
     finishPointerInteraction();
     stopRotationPreservingAngle();
-    renderTranslation();
+    if (hasCustomPlacement) {
+      renderTranslation();
+    } else {
+      restoreResponsiveDefaultTranslation();
+    }
     clearPointerPressure();
   };
 
@@ -459,6 +478,11 @@ export const initHomeSticker = (
   const keepPoseInsidePageWidth = (): void => {
     finishPointerInteraction();
     stopRotationPreservingAngle();
+    if (!hasCustomPlacement) {
+      restoreResponsiveDefaultTranslation();
+      clearPointerPressure();
+      return;
+    }
     translation = readRenderedTranslation();
     translation = clampStickerTranslationAfterViewportResize(
       translation,
@@ -511,6 +535,7 @@ export const initHomeSticker = (
       renderPointerPressure(event);
       return;
     }
+    hasCustomPlacement = true;
     translation = clampStickerTranslation(
       {
         x: translationOrigin.x + event.clientX - pointerOrigin.x,
@@ -546,6 +571,7 @@ export const initHomeSticker = (
     hasDragged = hasDragged || !isStickerClickGesture(maximumPointerTravel);
     const shouldRotate = !hasDragged;
     if (hasDragged) {
+      hasCustomPlacement = true;
       translation = clampStickerTranslation(
         {
           x: translationOrigin.x + event.clientX - pointerOrigin.x,
@@ -557,6 +583,7 @@ export const initHomeSticker = (
     }
     finishPointerInteraction();
     if (shouldRotate) {
+      if (!hasCustomPlacement) restoreResponsiveDefaultTranslation();
       renderPointerPressure(event);
       startClickRotation();
     } else {
@@ -574,11 +601,40 @@ export const initHomeSticker = (
     if (event.pointerId === activePointerId) stopMotionPreservingPose();
   };
 
-  /** 键盘激活键复用点击旋转序列，Escape 停住运动但保留角度。 */
+  /** 键盘激活键复用点击旋转，方向键则以稳定步长自由摆放当前贴纸。 */
   const handleKeyDown = (event: KeyboardEvent): void => {
     if (event.key === "Escape") {
       event.preventDefault();
       stopMotionPreservingPose();
+      return;
+    }
+
+    const keyboardStep = event.shiftKey
+      ? KEYBOARD_MOVE_STEP_LARGE
+      : KEYBOARD_MOVE_STEP;
+    const keyboardMovement: Record<string, StickerTranslation> = {
+      ArrowUp: { x: 0, y: -keyboardStep },
+      ArrowDown: { x: 0, y: keyboardStep },
+      ArrowLeft: { x: -keyboardStep, y: 0 },
+      ArrowRight: { x: keyboardStep, y: 0 },
+    };
+    const movement = keyboardMovement[event.key];
+    if (movement) {
+      event.preventDefault();
+      options.onActivate?.();
+      stopRotationPreservingAngle();
+      translation = readRenderedTranslation();
+      renderTranslation();
+      translation = clampStickerTranslation(
+        {
+          x: translation.x + movement.x,
+          y: translation.y + movement.y,
+        },
+        readTranslationBounds(),
+      );
+      hasCustomPlacement = true;
+      renderTranslation();
+      clearPointerPressure();
       return;
     }
 
@@ -645,7 +701,6 @@ export const initHomeSticker = (
     signal,
   });
   translation = readRenderedTranslation();
-  renderTranslation();
   renderRotation();
   clearPointerPressure();
   return cleanup;

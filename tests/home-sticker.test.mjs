@@ -337,7 +337,7 @@ test("wires drag-only movement and click-only rotation", async () => {
   assert.match(component, /home-sticker-surface/);
   assert.match(
     component,
-    /拖动后停在释放位置并可任意覆盖其他贴纸；单击以随机速度旋转，方向逐次交替/,
+    /拖动或使用方向键后停在当前位置并可任意覆盖其他贴纸；单击以随机速度旋转，方向逐次交替/,
   );
   assert.match(component, /draggable="false"/);
   assert.match(homepage, /<HomeSticker \/>/);
@@ -348,6 +348,9 @@ test("wires drag-only movement and click-only rotation", async () => {
   assert.match(interaction, /bringStickerToFront/);
   assert.match(interaction, /orderedStickers\.push\(activeSticker\)/);
   assert.match(interaction, /sticker\.addEventListener\("focus"/);
+  assert.match(interaction, /KEYBOARD_MOVE_STEP_LARGE/);
+  assert.match(interaction, /ArrowUp/);
+  assert.match(interaction, /restoreResponsiveDefaultTranslation/);
   assert.match(interaction, /--sticker-layer/);
   assert.match(interaction, /readOppositeStickerRotationDirection/);
   assert.match(interaction, /isStickerClickGesture\(maximumPointerTravel\)/);
@@ -381,6 +384,8 @@ test("wires drag-only movement and click-only rotation", async () => {
     /estimateStickerPointerVelocity|calculateStickerAngularVelocity|recordPointerSamples|handleDocumentPointerDown|handleWheel|settleRotation|readStickerRestRotation|returnTranslationHome|stopMotionAndReturnHome|keepPoseInsideViewport/,
   );
   assert.match(styles, /\.home-sticker-spin/);
+  assert.match(styles, /pointer-events:\s*auto/);
+  assert.match(styles, /memo-logo[\s\S]*clip-path:\s*inset\(19% 0\)/);
   assert.match(styles, /z-index:\s*var\(--sticker-layer\)/);
   assert.match(styles, /isolation:\s*isolate/);
   assert.match(styles, /perspective\(24rem\)/);

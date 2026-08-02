@@ -3,7 +3,7 @@ import "../styles/home-sticker.css";
 import { HOME_STICKER_DEFINITIONS } from "../lib/home-sticker";
 
 const stickerInstructions =
-  "拖动后停在释放位置并可任意覆盖其他贴纸；单击以随机速度旋转，方向逐次交替";
+  "拖动或使用方向键后停在当前位置并可任意覆盖其他贴纸；单击以随机速度旋转，方向逐次交替";
 ---
 
 <div
@@ -18,7 +18,7 @@ const stickerInstructions =
         class="home-sticker"
         type="button"
         aria-label={`${sticker.label}。${stickerInstructions}`}
-        aria-keyshortcuts="Escape Enter Space"
+        aria-keyshortcuts="Escape Enter Space ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight"
         data-home-sticker
         data-sticker-id={sticker.id}
         data-sticker-layer={sticker.initialLayer}
