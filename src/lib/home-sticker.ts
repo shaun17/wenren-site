@@ -138,6 +138,22 @@ export const selectStickerInitialRotation = (randomValue: number): number => {
   );
 };
 
+/**
+ * 从服务端输出的数据属性读取默认槽位。默认位置不再依赖内联样式，
+ * 因而在正式站严格的 style-src 安全策略下也能稳定恢复横向队列。
+ */
+export const parseStickerDefaultTranslation = (
+  xValue: string | undefined,
+  yValue: string | undefined,
+): StickerTranslation => {
+  const parsedX = Number.parseFloat(xValue ?? "");
+  const parsedY = Number.parseFloat(yValue ?? "");
+  return {
+    x: Number.isFinite(parsedX) ? parsedX : 0,
+    y: Number.isFinite(parsedY) ? parsedY : 0,
+  };
+};
+
 /** 将贴纸位移限制在当前可视区域内，始终保留一圈可操作边距。 */
 export const clampStickerTranslation = (
   translation: StickerTranslation,
@@ -270,6 +286,10 @@ export const initHomeSticker = (
     "(hover: hover) and (pointer: fine)",
   );
   const random = options.random ?? Math.random;
+  const defaultTranslationPercent = parseStickerDefaultTranslation(
+    sticker.dataset.stickerDefaultX,
+    sticker.dataset.stickerDefaultY,
+  );
   const poseProperties = [
     "--sticker-x",
     "--sticker-y",
@@ -309,16 +329,16 @@ export const initHomeSticker = (
     sticker.style.setProperty("--sticker-y", `${translation.y.toFixed(2)}px`);
   };
 
-  /** 未拖动的贴纸始终恢复服务端给出的百分比槽位，横竖屏变化后会随尺寸重新排布。 */
+  /** 未拖动的贴纸始终恢复数据属性中的百分比槽位，横竖屏变化后会随尺寸重新排布。 */
   const restoreResponsiveDefaultTranslation = (): void => {
-    for (const property of ["--sticker-x", "--sticker-y"] as const) {
-      const initialValue = initialInlinePose.get(property) ?? "";
-      if (initialValue) {
-        sticker.style.setProperty(property, initialValue);
-      } else {
-        sticker.style.removeProperty(property);
-      }
-    }
+    sticker.style.setProperty(
+      "--sticker-x",
+      `${defaultTranslationPercent.x}%`,
+    );
+    sticker.style.setProperty(
+      "--sticker-y",
+      `${defaultTranslationPercent.y}%`,
+    );
   };
 
   /** 按当前保留角度重算屏幕落点，旋转后鼠标压下的位置仍与视觉方向一致。 */
@@ -700,6 +720,7 @@ export const initHomeSticker = (
     once: true,
     signal,
   });
+  restoreResponsiveDefaultTranslation();
   translation = readRenderedTranslation();
   renderRotation();
   clearPointerPressure();
@@ -733,6 +754,15 @@ export const initHomeStickerDeck = (
     dataset: sticker.dataset.stickerLayer,
     style: sticker.style.getPropertyValue("--sticker-layer"),
   }));
+
+  /**
+   * 正式站 CSP 会拒绝服务端内联样式，初始层级与默认位移一样必须由可信脚本写入 CSSOM。
+   * 数据属性仍是唯一来源，避免首轮激活时把最高层误判为普通层。
+   */
+  stickers.forEach((sticker) => {
+    const initialLayer = Number(sticker.dataset.stickerLayer) || 1;
+    sticker.style.setProperty("--sticker-layer", String(initialLayer));
+  });
 
   /** 把当前贴纸移到队尾，并把所有层级重新压回 1 至 6，避免长期操作后层级无限增长。 */
   const bringStickerToFront = (activeSticker: HTMLElement): void => {

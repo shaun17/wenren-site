@@ -22,7 +22,8 @@ const stickerInstructions =
         data-home-sticker
         data-sticker-id={sticker.id}
         data-sticker-layer={sticker.initialLayer}
-        style={`--sticker-x: ${sticker.initialXPercent}%; --sticker-y: ${sticker.initialYPercent}%; --sticker-layer: ${sticker.initialLayer};`}
+        data-sticker-default-x={sticker.initialXPercent}
+        data-sticker-default-y={sticker.initialYPercent}
       >
         <span class="home-sticker-spin" aria-hidden="true">
           <span class="home-sticker-surface">

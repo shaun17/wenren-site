@@ -11,6 +11,7 @@ import {
   isStickerClickGesture,
   mapStickerPressure,
   normalizeStickerRotation,
+  parseStickerDefaultTranslation,
   readOppositeStickerRotationDirection,
   selectStickerClickRotationSpeed,
   selectStickerInitialRotation,
@@ -140,6 +141,18 @@ test("maps random values to bounded initial sticker rotations", () => {
   assert.equal(selectStickerInitialRotation(0.75), 5);
   assert.equal(selectStickerInitialRotation(1), 10);
   assert.equal(selectStickerInitialRotation(2), 10);
+});
+
+/** 严格 CSP 会禁用服务端内联样式，因此默认槽位必须能从数据属性独立恢复。 */
+test("parses CSP-safe default sticker positions", () => {
+  assert.deepEqual(parseStickerDefaultTranslation("-330", "18"), {
+    x: -330,
+    y: 18,
+  });
+  assert.deepEqual(parseStickerDefaultTranslation(undefined, "invalid"), {
+    x: 0,
+    y: 0,
+  });
 });
 
 /** 计算单位贴纸在另一张贴纸下方时的轴对齐覆盖率。 */
@@ -333,6 +346,9 @@ test("wires drag-only movement and click-only rotation", async () => {
   assert.match(component, /HOME_STICKER_DEFINITIONS\.map/);
   assert.match(component, /data-home-sticker-deck/);
   assert.match(component, /data-sticker-id/);
+  assert.match(component, /data-sticker-default-x/);
+  assert.match(component, /data-sticker-default-y/);
+  assert.doesNotMatch(component, /style=\{`--sticker-x:/);
   assert.match(component, /home-sticker-spin/);
   assert.match(component, /home-sticker-surface/);
   assert.match(
@@ -351,6 +367,11 @@ test("wires drag-only movement and click-only rotation", async () => {
   assert.match(interaction, /KEYBOARD_MOVE_STEP_LARGE/);
   assert.match(interaction, /ArrowUp/);
   assert.match(interaction, /restoreResponsiveDefaultTranslation/);
+  assert.match(interaction, /sticker\.dataset\.stickerDefaultX/);
+  assert.match(
+    interaction,
+    /sticker\.style\.setProperty\("--sticker-layer", String\(initialLayer\)\)/,
+  );
   assert.match(interaction, /--sticker-layer/);
   assert.match(interaction, /readOppositeStickerRotationDirection/);
   assert.match(interaction, /isStickerClickGesture\(maximumPointerTravel\)/);
@@ -422,9 +443,17 @@ test("renders all six stickers only in the built homepage", async () => {
   assert.match(homepage, /data-home-sticker-deck/);
   for (const sticker of HOME_STICKER_DEFINITIONS) {
     assert.match(homepage, new RegExp(`data-sticker-id="${sticker.id}"`));
+    assert.match(
+      homepage,
+      new RegExp(`data-sticker-id="${sticker.id}"[^>]*data-sticker-default-x="${sticker.initialXPercent}"[^>]*data-sticker-default-y="${sticker.initialYPercent}"`),
+    );
     assert.match(homepage, new RegExp(sticker.asset.replaceAll("/", "\\/")));
     await access(new URL(`../dist${sticker.asset}`, import.meta.url));
   }
+  assert.doesNotMatch(
+    homepage,
+    /<button[^>]*data-home-sticker(?:\s|>)[^>]*style=/,
+  );
 
   const otherHtmlFiles = builtFiles.filter(
     (file) => file.endsWith(".html") && file !== "index.html",
