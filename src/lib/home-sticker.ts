@@ -44,10 +44,70 @@ interface HomeStickerOptions {
 }
 
 /**
- * 六张贴纸沿右上方向左松散排开。相邻中心横向间隔 66%，高度各不相同，
+ * 七张贴纸沿右上方向左松散排开。相邻中心横向间隔 60%，高度各不相同，
  * 因而默认状态只会轻微遮住相邻贴纸；用户拖动后则不再做贴纸间避让。
  */
 export const HOME_STICKER_DEFINITIONS = [
+  {
+    id: "memo-logo",
+    asset: "/stickers/memo-logo-sticker-3f55c5c48975.webp",
+    label: "黑色 M 图形贴纸",
+    width: 512,
+    height: 341,
+    initialXPercent: -360,
+    initialYPercent: 0,
+    initialLayer: 1,
+  },
+  {
+    id: "petly",
+    asset: "/stickers/petly-sticker-43756132f0e3.webp",
+    label: "Petly 品牌贴纸",
+    width: 512,
+    height: 512,
+    initialXPercent: -300,
+    initialYPercent: -6,
+    initialLayer: 2,
+  },
+  {
+    id: "owl-reader",
+    asset: "/stickers/owl-reader-sticker-ce2afb2c71f3.webp",
+    label: "猫头鹰读书贴纸",
+    width: 512,
+    height: 454,
+    initialXPercent: -240,
+    initialYPercent: 4,
+    initialLayer: 3,
+  },
+  {
+    id: "green-orbit",
+    asset: "/stickers/green-orbit-sticker-6c8cfb4150d7.webp",
+    label: "绿色环形标志贴纸",
+    width: 512,
+    height: 512,
+    initialXPercent: -180,
+    initialYPercent: 12,
+    initialLayer: 4,
+  },
+  {
+    id: "blonde-avatar",
+    asset: "/stickers/blonde-avatar-sticker-8ff5844bb149.webp",
+    label: "金发人物头像贴纸",
+    width: 477,
+    height: 512,
+    initialXPercent: -120,
+    initialYPercent: 8,
+    initialLayer: 5,
+  },
+  {
+    id: "pagecomet",
+    asset: "/stickers/pagecomet-logo-sticker-c5000583737b.webp",
+    label: "PageComet 页面彗星标志贴纸",
+    width: 512,
+    height: 512,
+    initialXPercent: -60,
+    initialYPercent: -2,
+    initialLayer: 6,
+  },
   {
     id: "mcdonald",
     asset: "/stickers/mcdonald-logo-sticker-705aee4ab869.png",
@@ -56,57 +116,7 @@ export const HOME_STICKER_DEFINITIONS = [
     height: 512,
     initialXPercent: 0,
     initialYPercent: 18,
-    initialLayer: 6,
-  },
-  {
-    id: "memo-logo",
-    asset: "/stickers/memo-logo-sticker-3f55c5c48975.webp",
-    label: "黑色 M 图形贴纸",
-    width: 512,
-    height: 341,
-    initialXPercent: -330,
-    initialYPercent: 0,
-    initialLayer: 1,
-  },
-  {
-    id: "blonde-avatar",
-    asset: "/stickers/blonde-avatar-sticker-8ff5844bb149.webp",
-    label: "金发人物头像贴纸",
-    width: 477,
-    height: 512,
-    initialXPercent: -66,
-    initialYPercent: 8,
-    initialLayer: 5,
-  },
-  {
-    id: "owl-reader",
-    asset: "/stickers/owl-reader-sticker-ce2afb2c71f3.webp",
-    label: "猫头鹰读书贴纸",
-    width: 512,
-    height: 454,
-    initialXPercent: -198,
-    initialYPercent: 4,
-    initialLayer: 3,
-  },
-  {
-    id: "petly",
-    asset: "/stickers/petly-sticker-43756132f0e3.webp",
-    label: "Petly 品牌贴纸",
-    width: 512,
-    height: 512,
-    initialXPercent: -264,
-    initialYPercent: -6,
-    initialLayer: 2,
-  },
-  {
-    id: "green-orbit",
-    asset: "/stickers/green-orbit-sticker-6c8cfb4150d7.webp",
-    label: "绿色环形标志贴纸",
-    width: 512,
-    height: 512,
-    initialXPercent: -132,
-    initialYPercent: 12,
-    initialLayer: 4,
+    initialLayer: 7,
   },
 ] as const satisfies readonly HomeStickerDefinition[];
 
@@ -764,7 +774,7 @@ export const initHomeStickerDeck = (
     sticker.style.setProperty("--sticker-layer", String(initialLayer));
   });
 
-  /** 把当前贴纸移到队尾，并把所有层级重新压回 1 至 6，避免长期操作后层级无限增长。 */
+  /** 把当前贴纸移到队尾，并把所有层级重新压回 1 至 7，避免长期操作后层级无限增长。 */
   const bringStickerToFront = (activeSticker: HTMLElement): void => {
     const currentLayer = Number(activeSticker.dataset.stickerLayer) || 0;
     if (currentLayer === highestLayer) return;

@@ -123,7 +123,7 @@
 @media (max-width: 760px) {
   .home-sticker-anchor {
     top: calc(var(--home-gutter) + 1.1rem);
-    width: clamp(4.125rem, 18vw, 5rem);
+    width: clamp(3.75rem, 17vw, 5rem);
   }
 }
 

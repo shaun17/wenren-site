@@ -145,14 +145,35 @@ test("maps random values to bounded initial sticker rotations", () => {
 
 /** 严格 CSP 会禁用服务端内联样式，因此默认槽位必须能从数据属性独立恢复。 */
 test("parses CSP-safe default sticker positions", () => {
-  assert.deepEqual(parseStickerDefaultTranslation("-330", "18"), {
-    x: -330,
+  assert.deepEqual(parseStickerDefaultTranslation("-360", "18"), {
+    x: -360,
     y: 18,
   });
   assert.deepEqual(parseStickerDefaultTranslation(undefined, "invalid"), {
     x: 0,
     y: 0,
   });
+});
+
+/** 七张贴纸按视觉顺序共享连续槽位与层级，新增素材不会把队列额外撑宽。 */
+test("keeps the seven-sticker queue ordered and compact", () => {
+  assert.deepEqual(
+    HOME_STICKER_DEFINITIONS.map((sticker) => ({
+      id: sticker.id,
+      x: sticker.initialXPercent,
+      y: sticker.initialYPercent,
+      layer: sticker.initialLayer,
+    })),
+    [
+      { id: "memo-logo", x: -360, y: 0, layer: 1 },
+      { id: "petly", x: -300, y: -6, layer: 2 },
+      { id: "owl-reader", x: -240, y: 4, layer: 3 },
+      { id: "green-orbit", x: -180, y: 12, layer: 4 },
+      { id: "blonde-avatar", x: -120, y: 8, layer: 5 },
+      { id: "pagecomet", x: -60, y: -2, layer: 6 },
+      { id: "mcdonald", x: 0, y: 18, layer: 7 },
+    ],
+  );
 });
 
 /** 计算单位贴纸在另一张贴纸下方时的轴对齐覆盖率。 */
@@ -174,7 +195,7 @@ const calculatePlacementOverlap = (lowerSticker, upperSticker) => {
   return (overlapWidth * overlapHeight) / 10_000;
 };
 
-/** 默认扇形布局中每张贴纸只与相邻层相交，覆盖面积稳定少于一半。 */
+/** 默认错落队列中每张贴纸只与相邻层相交，覆盖面积稳定少于一半。 */
 test("keeps every default sticker overlap below one half", () => {
   for (const lowerSticker of HOME_STICKER_DEFINITIONS) {
     const upperStickers = HOME_STICKER_DEFINITIONS.filter(
@@ -262,7 +283,7 @@ test("keeps rotated default sticker coverage below one half", () => {
   const representativeAngles = [-10, 0, 10];
   let maximumCoverage = 0;
 
-  /** 穷举六张贴纸的代表角度组合，覆盖范围端点与不旋转状态。 */
+  /** 穷举七张贴纸的代表角度组合，覆盖范围端点与不旋转状态。 */
   const verifyRotationCombination = (rotations) => {
     if (rotations.length < HOME_STICKER_DEFINITIONS.length) {
       for (const angle of representativeAngles) {
@@ -293,16 +314,16 @@ test("keeps rotated default sticker coverage below one half", () => {
   assert.ok(maximumCoverage <= 0.5, `最大联合覆盖率为 ${maximumCoverage}`);
 });
 
-/** 六张公开贴纸必须保留透明轮廓与内容哈希，并共同控制在轻量首屏预算内。 */
-test("ships six compact transparent sticker assets", async () => {
-  assert.equal(HOME_STICKER_DEFINITIONS.length, 6);
+/** 七张公开贴纸必须保留透明轮廓与内容哈希，并共同控制在轻量首屏预算内。 */
+test("ships seven compact transparent sticker assets", async () => {
+  assert.equal(HOME_STICKER_DEFINITIONS.length, 7);
   assert.equal(
     new Set(HOME_STICKER_DEFINITIONS.map((sticker) => sticker.id)).size,
-    6,
+    7,
   );
   assert.equal(
     new Set(HOME_STICKER_DEFINITIONS.map((sticker) => sticker.asset)).size,
-    6,
+    7,
   );
 
   let totalBytes = 0;
@@ -324,8 +345,22 @@ test("ships six compact transparent sticker assets", async () => {
       createHash("sha256").update(body).digest("hex").slice(0, 12),
       expectedHash,
     );
+
+    if (sticker.id === "pagecomet") {
+      const { data, info } = await sharp(body)
+        .ensureAlpha()
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+      let visiblePixels = 0;
+      for (let index = 3; index < data.length; index += info.channels) {
+        if (data[index] > 8) visiblePixels += 1;
+      }
+      const visibleRatio = visiblePixels / (info.width * info.height);
+      assert.ok(visibleRatio > 0.12, "PageComet 自由轮廓不能小到难以辨认");
+      assert.ok(visibleRatio < 0.35, "PageComet 不能重新退化成矩形图标");
+    }
   }
-  assert.ok(totalBytes < 160 * 1024, "六张贴纸首屏总量应小于 160 KiB");
+  assert.ok(totalBytes < 160 * 1024, "七张贴纸首屏总量应小于 160 KiB");
 });
 
 /** 组件拆分位移、旋转与压感三层，并明确拖拽和点击互斥语义。 */
@@ -429,7 +464,7 @@ test("wires drag-only movement and click-only rotation", async () => {
 });
 
 /** 最终静态产物只在首页加载贴纸，内页不会承担无关装饰与交互脚本。 */
-test("renders all six stickers only in the built homepage", async () => {
+test("renders all seven stickers only in the built homepage", async () => {
   const [homepage, headers, builtFiles] = await Promise.all([
     readFile(new URL("../dist/index.html", import.meta.url), "utf8"),
     readFile(new URL("../dist/_headers", import.meta.url), "utf8"),
@@ -439,7 +474,7 @@ test("renders all six stickers only in the built homepage", async () => {
   const renderedStickers = homepage.match(
     /<button\b(?=[^>]*\bdata-home-sticker(?:\s|>))[^>]*>/g,
   );
-  assert.equal(renderedStickers?.length, 6);
+  assert.equal(renderedStickers?.length, 7);
   assert.match(homepage, /data-home-sticker-deck/);
   for (const sticker of HOME_STICKER_DEFINITIONS) {
     const renderedSticker = renderedStickers?.find((tag) =>
