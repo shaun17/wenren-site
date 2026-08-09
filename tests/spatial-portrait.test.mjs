@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { imageSize } from "image-size";
 import sharp from "sharp";
 import * as THREE from "three";
 import { spatialAvatarAssets } from "../src/config/spatial-avatar-assets.ts";
@@ -181,6 +180,16 @@ const assertVectorClose = (actual, expected, epsilon = 1e-7) => {
       `第 ${index} 轴偏差过大：${value} !== ${expected[index]}`,
     );
   }
+};
+
+/** 使用与正式媒体管线一致的 Sharp 元数据读取，核对海报与 GLB 内嵌纹理尺寸。 */
+const readImageSize = async (buffer) => {
+  const metadata = await sharp(buffer).metadata();
+  return {
+    width: metadata.width,
+    height: metadata.height,
+    type: metadata.format === "jpeg" ? "jpg" : metadata.format,
+  };
 };
 
 /** 以稳定的暗部阈值提取人物边界，防止内容哈希正确但构图再次偏离画面中心。 */
@@ -1950,22 +1959,22 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
     MOBILE_POSTER_SHA256,
     "移动端同模型海报必须保持内容寻址一致",
   );
-  assert.deepEqual(imageSize(loadingPoster), {
+  assert.deepEqual(await readImageSize(loadingPoster), {
     width: 2_560,
     height: 1_440,
     type: "jpg",
   });
-  assert.deepEqual(imageSize(loadingMobilePoster), {
+  assert.deepEqual(await readImageSize(loadingMobilePoster), {
     width: 780,
     height: 1_688,
     type: "jpg",
   });
-  assert.deepEqual(imageSize(poster), {
+  assert.deepEqual(await readImageSize(poster), {
     width: 1_280,
     height: 720,
     type: "jpg",
   });
-  assert.deepEqual(imageSize(mobilePoster), {
+  assert.deepEqual(await readImageSize(mobilePoster), {
     width: 390,
     height: 844,
     type: "jpg",
@@ -2119,7 +2128,7 @@ test("keeps the optimized eye rig and textured geometry intact", async (t) => {
   for (const image of document.images) {
     assert.equal(image.mimeType, "image/jpeg");
     assert.equal(image.uri, undefined, "三张纹理必须继续内嵌在 GLB 中");
-    assert.deepEqual(imageSize(readBufferViewBytes(asset, image.bufferView)), {
+    assert.deepEqual(await readImageSize(readBufferViewBytes(asset, image.bufferView)), {
       width: 2_048,
       height: 2_048,
       type: "jpg",
