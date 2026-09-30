@@ -306,7 +306,6 @@ export const initHomeSticker = (
     "--sticker-rotation",
     "--sticker-tilt-x",
     "--sticker-tilt-y",
-    "--sticker-artwork",
   ] as const;
   const initialInlinePose = new Map(
     poseProperties.map((property) => [
@@ -314,14 +313,6 @@ export const initHomeSticker = (
       sticker.style.getPropertyValue(property),
     ]),
   );
-  // 直接复用当前图片的透明轮廓作为镭射膜遮罩，避免素材更换后轮廓错位或重复下载。
-  const artwork = sticker.querySelector<HTMLImageElement>("img");
-  if (artwork) {
-    sticker.style.setProperty(
-      "--sticker-artwork",
-      `url(${JSON.stringify(artwork.src)})`,
-    );
-  }
   let translation: StickerTranslation = { x: 0, y: 0 };
   let rotation = normalizeStickerRotation(options.initialRotation ?? 0);
   let activePointerId: number | null = null;
