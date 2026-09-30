@@ -90,6 +90,8 @@
 
 /* 以中心为支点做轻微透视：鼠标侧远离变小，对侧靠近变大，不缩放整张贴纸。 */
 .home-sticker-surface {
+  position: relative;
+  isolation: isolate;
   pointer-events: none;
   filter: drop-shadow(0 0.42rem 0.6rem rgba(17, 17, 17, 0.16));
   transform: perspective(24rem) rotateX(var(--sticker-tilt-x))
@@ -101,6 +103,48 @@
     transform 200ms cubic-bezier(0.16, 1, 0.3, 1),
     filter 160ms ease-out;
   will-change: transform;
+}
+
+/* 镭射膜沿原图透明轮廓覆盖；底层保留图案，彩虹与窄高光共同呈现炫彩质感。 */
+.home-sticker-surface::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  pointer-events: none;
+  background:
+    linear-gradient(
+      calc(115deg + var(--sticker-tilt-y) * 4),
+      transparent 25%,
+      rgb(255 255 255 / 0.8) 32%,
+      transparent 39%,
+      transparent 62%,
+      rgb(255 255 255 / 0.65) 67%,
+      transparent 73%
+    ),
+    linear-gradient(
+      calc(135deg + var(--sticker-tilt-x) * 4),
+      #ff8cce 0%,
+      #c2a0ff 18%,
+      #79caff 35%,
+      #7cf2d4 50%,
+      #f4ef9b 66%,
+      #ffb9a1 82%,
+      #e9a4ff 100%
+    );
+  mask-image: var(--sticker-artwork, linear-gradient(transparent, transparent));
+  mask-size: contain;
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mix-blend-mode: hard-light;
+  opacity: 0.64;
+  transition: opacity 180ms ease-out;
+}
+
+/* 悬浮、拖动与键盘聚焦时增强反光；角度复用已有压感，不额外启动动画循环。 */
+.home-sticker.is-pointer-over .home-sticker-surface::after,
+.home-sticker.is-dragging .home-sticker-surface::after,
+.home-sticker:focus-visible .home-sticker-surface::after {
+  opacity: 0.82;
 }
 
 .home-sticker.is-pointer-over .home-sticker-surface,
@@ -117,7 +161,8 @@
 /* 键盘焦点只增强贴纸自身光晕，不再绘制黑色矩形边框。 */
 .home-sticker:focus-visible .home-sticker-surface {
   filter:
-    drop-shadow(0 0 0.3rem rgba(255, 205, 48, 0.7))
+    drop-shadow(-0.12rem 0 0.24rem rgb(99 210 255 / 0.85))
+    drop-shadow(0.12rem 0 0.24rem rgb(229 133 255 / 0.85))
     drop-shadow(0 0.5rem 0.7rem rgba(17, 17, 17, 0.18));
 }
 
@@ -136,8 +181,15 @@
 
 @media (prefers-reduced-motion: reduce) {
   .home-sticker,
-  .home-sticker-surface {
+  .home-sticker-surface,
+  .home-sticker-surface::after {
     transition-duration: 0.01ms;
+  }
+
+  /* 减少动态效果时固定反光方向，保留静态炫彩外观。 */
+  .home-sticker-surface::after {
+    --sticker-tilt-x: 0deg;
+    --sticker-tilt-y: 0deg;
   }
 
   .home-sticker-surface,
