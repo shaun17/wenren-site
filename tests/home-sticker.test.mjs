@@ -314,9 +314,9 @@ test("keeps rotated default sticker coverage below one half", () => {
   assert.ok(maximumCoverage <= 0.5, `最大联合覆盖率为 ${maximumCoverage}`);
 });
 
-/** 三张品牌方卡只透明外部画布并保留完整圆角底板，其余贴纸继续使用自由轮廓。 */
-const CARD_STICKER_IDS = new Set(["petly", "green-orbit", "pagecomet"]);
-/** 锁定三张方卡共享的透明蒙版，防止圆角附近的白边被局部误删。 */
+/** 两张品牌方卡保留圆角底板，PageComet 与其余贴纸使用图形自身的自由轮廓。 */
+const CARD_STICKER_IDS = new Set(["petly", "green-orbit"]);
+/** 锁定两张方卡共享的透明蒙版，防止圆角附近的白边被局部误删。 */
 const CARD_STICKER_ALPHA_HASH =
   "45fc932845c77b5b3c9cc85430a406a95e706dd7b3c4f81411148e0ab5c224b2";
 
@@ -461,6 +461,11 @@ test("ships seven compact sticker assets with intentional silhouettes", async ()
       assert.equal(metadata.hasAlpha, true, `${sticker.id} 应保留透明轮廓`);
       assert.ok(visibleRatio > 0.1, `${sticker.id} 不能小到难以辨认`);
       assert.ok(visibleRatio < 0.9, `${sticker.id} 不应退化成矩形底图`);
+      if (sticker.id === "pagecomet") {
+        // C 形标志的中心必须镂空，防止只裁掉四角却仍保留整块卡片底板。
+        const center = Math.floor(info.height / 2) * info.width + Math.floor(info.width / 2);
+        assert.ok(alphaMask[center] <= 8, "PageComet 贴纸中心应透明");
+      }
     }
   }
   assert.ok(totalBytes < 160 * 1024, "七张贴纸首屏总量应小于 160 KiB");

@@ -100,7 +100,7 @@ export const HOME_STICKER_DEFINITIONS = [
   },
   {
     id: "pagecomet",
-    asset: "/stickers/pagecomet-logo-sticker-b2c617ce158d.webp",
+    asset: "/stickers/pagecomet-logo-sticker-d348516cdca8.webp",
     label: "PageComet 页面彗星标志贴纸",
     width: 512,
     height: 512,
