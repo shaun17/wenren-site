@@ -4,11 +4,13 @@ import DirectoryColumn from "../components/DirectoryColumn.astro";
 import FooterDetails from "../components/FooterDetails.astro";
 import HomeSticker from "../components/HomeSticker.astro";
 import { ORDERED_CATEGORIES } from "../content/categories";
-import { getSiteContent } from "../content/site-content";
+import { getJournalEntries, getSiteContent } from "../content/site-content";
 import SiteLayout from "../layouts/SiteLayout.astro";
 import { siteConfig } from "../config/runtime-site-config";
 
 const entries = await getSiteContent();
+// 流水账没有标题，首页目录单独传入时间流条目，展示日期与首句。
+const journalEntries = await getJournalEntries();
 const headlineCategory = ORDERED_CATEGORIES.find(
   (category) => category.key === siteConfig.home.headline.categoryKey,
 );
@@ -54,6 +56,7 @@ const headlinePrefixTail = siteConfig.home.headline.prefix.slice(
               <DirectoryColumn
                 category={category}
                 entries={entries.filter((entry) => entry.category === category.key)}
+                journalEntries={category.key === "journal" ? journalEntries : undefined}
               />
             ))
           }
