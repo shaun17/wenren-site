@@ -1437,7 +1437,7 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
   assert.doesNotMatch(builtAvatar, /滚动叙事|移动指针控制目光/);
   assert.match(
     builtAvatar,
-    /<a class="spatial-home-link" href="\/">首页<span class="spatial-home-link-arrow" aria-hidden="true">→<\/span><\/a>/,
+    /<a class="spatial-home-link" href="\/">首页<\/a>/,
   );
   assert.match(
     builtAvatar,
@@ -1883,10 +1883,8 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
     heroStyles,
     /\.home-information\s*\{[^}]*font-size:\s*var\(--information-font-size\)/,
   );
-  assert.match(
-    heroStyles,
-    /\.hero-avatar-link::before\s*\{[^}]*content:\s*"↖";/,
-  );
+  // 品牌名只靠下划线表明是空间肖像入口，不再在左上角叠加装饰箭头。
+  assert.doesNotMatch(heroStyles, /\.hero-avatar-link::before/);
   assert.match(
     styles,
     /\.spatial-summary,\s*\.spatial-copy > p:not\(\.spatial-eyebrow\)\s*\{[^}]*font-size:\s*var\(--information-font-size\)/,
@@ -1899,7 +1897,7 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
     styles,
     /\.spatial-home-link\s*\{[^}]*font-size:\s*var\(--information-font-size\)/,
   );
-  assert.match(styles, /\.spatial-home-link-arrow\s*\{/);
+  assert.doesNotMatch(styles, /\.spatial-home-link-arrow/);
   assert.doesNotMatch(styles, /font-size:\s*0\.67rem/);
   assert.match(
     styles,

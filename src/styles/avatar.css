@@ -107,21 +107,12 @@
   padding: 0.58rem 0.2rem;
   border-bottom: 1px solid var(--spatial-line);
   align-items: center;
-  gap: 0.55rem;
   font-size: var(--information-font-size);
   letter-spacing: 0.05em;
   text-transform: none;
   transition:
     border-color 180ms ease,
     transform 180ms ease;
-}
-
-/* 文字之后的箭头明确返回方向，并在悬浮时给出轻量的前进反馈。 */
-.spatial-home-link-arrow {
-  display: inline-block;
-  font-size: 1.05em;
-  line-height: 1;
-  transition: transform 180ms ease;
 }
 
 .spatial-stage {
@@ -598,10 +589,6 @@
     transform: translateY(-0.1rem);
   }
 
-  .spatial-home-link:hover .spatial-home-link-arrow {
-    transform: translateX(0.18rem);
-  }
-
   .spatial-directory-groups .directory-links a:hover {
     padding-inline: 0.7rem;
     background: rgba(32, 33, 30, 0.06);
@@ -612,10 +599,6 @@
 .spatial-directory-groups a:focus-visible,
 .spatial-brand:focus-visible {
   outline-color: var(--spatial-ink);
-}
-
-.spatial-home-link:focus-visible .spatial-home-link-arrow {
-  transform: translateX(0.18rem);
 }
 
 @media (max-width: 800px) {
