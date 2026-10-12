@@ -1468,7 +1468,9 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
     builtAvatar,
     /<p class="spatial-scroll-cue" aria-hidden="true">/,
   );
-  assert.equal((builtAvatar.match(/01 \/ ABOUT/g) ?? []).length, 1);
+  // 3D 页章节眉题只保留英文词，不再带「01 /」式编号；滚动提示没有箭头。
+  assert.equal((builtAvatar.match(/<p class="spatial-eyebrow">ABOUT<\/p>/g) ?? []).length, 1);
+  assert.doesNotMatch(builtAvatar, /0[1-4] \/ (?:ABOUT|RÉSUMÉ|INDEPENDENT|NOTES)|SCROLL TO EXPLORE/);
   assert.equal((builtAvatar.match(/About Alice/g) ?? []).length, 1);
   assert.doesNotMatch(builtAvatar, /spatial-hero-marker/);
   assert.ok(
@@ -1509,7 +1511,9 @@ test("keeps the isolated GLB portrait progressive and accessible", async () => {
     avatarPage,
     /<p class="spatial-scroll-cue" aria-hidden="true">/,
   );
-  assert.equal((avatarPage.match(/01 \/ ABOUT/g) ?? []).length, 1);
+  // 3D 页章节眉题只保留英文词，不再带「01 /」式编号；滚动提示没有箭头。
+  assert.equal((avatarPage.match(/<p class="spatial-eyebrow">ABOUT<\/p>/g) ?? []).length, 1);
+  assert.doesNotMatch(avatarPage, /0[1-4] \/ (?:ABOUT|RÉSUMÉ|INDEPENDENT|NOTES)|SCROLL TO EXPLORE/);
   assert.equal(
     (avatarPage.match(/About \{siteConfig\.brand\.name\}/g) ?? []).length,
     1,

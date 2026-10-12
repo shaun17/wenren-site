@@ -570,17 +570,12 @@
   display: flex;
   margin: 0;
   align-items: center;
-  gap: 0.75rem;
   color: var(--spatial-muted);
   font-family: var(--font-mono);
-  font-size: 0.62rem;
-  letter-spacing: 0.12em;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
   opacity: var(--spatial-cue-opacity);
   will-change: opacity;
-}
-
-.spatial-scroll-cue span {
-  font-size: 1.25em;
 }
 
 @media (hover: hover) and (pointer: fine) {
