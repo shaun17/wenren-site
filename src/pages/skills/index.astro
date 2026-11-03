@@ -1,0 +1,63 @@
+---
+import BackLink from "../../components/BackLink.astro";
+import PageFooter from "../../components/PageFooter.astro";
+import { siteConfig } from "../../config/runtime-site-config";
+import { SKILLS_SOURCE_REPOSITORY, loadSkills } from "../../content/skills";
+import SiteLayout from "../../layouts/SiteLayout.astro";
+import "../../styles/skills.css";
+
+// 列表只放名称与一句摘要，安装方式与文件清单都在各自的详情页。
+const skills = loadSkills({ origin: siteConfig.origin });
+const description = "我自己在用的 Claude Code skills，每个都可以让 agent 直接装进 ~/.claude/skills/。";
+// 展示用的仓库地址去掉协议，链接本身仍指向完整地址。
+const repositoryLabel = SKILLS_SOURCE_REPOSITORY.replace(/^https?:\/\//, "");
+---
+
+<SiteLayout title="Skills" description={description}>
+  <main class="content-shell skills-index">
+    <nav class="page-navigation" aria-label="页面导航">
+      <BackLink href="/" label="首页" />
+    </nav>
+
+    <header class="category-header">
+      <p class="category-kicker">CLAUDE CODE / SKILLS</p>
+      <h1>Skills</h1>
+      <p class="category-description">{description}</p>
+    </header>
+
+    <section class="content-list" aria-label="skill 列表">
+      <ol>
+        {
+          skills.map((skill) => (
+            <li>
+              <a href={`/skills/${skill.name}/`}>
+                <span class="content-list-copy">
+                  <span class="content-list-title">{skill.name}</span>
+                  <span class="content-list-summary">{skill.summary}</span>
+                </span>
+              </a>
+            </li>
+          ))
+        }
+      </ol>
+    </section>
+
+    <!-- 机器入口：agent 读纯文本索引发现全部 skill，人可以去源码仓库跟踪更新。 -->
+    <dl class="skills-machine">
+      <div>
+        <dt>给 agent</dt>
+        <dd><a href="/skills/index.txt">/skills/index.txt</a></dd>
+      </div>
+      <div>
+        <dt>源码</dt>
+        <dd>
+          <a href={SKILLS_SOURCE_REPOSITORY} target="_blank" rel="noopener noreferrer">
+            {repositoryLabel}
+          </a>
+        </dd>
+      </div>
+    </dl>
+
+    <PageFooter />
+  </main>
+</SiteLayout>

@@ -1,0 +1,59 @@
+---
+import {
+  createSatteriMarkdownProcessor,
+  type SatteriMarkdownProcessorOptions,
+} from "@astrojs/markdown-satteri";
+import type { Skill } from "../content/skills";
+
+interface Props {
+  skill: Skill;
+}
+
+type MdastPlugin = NonNullable<SatteriMarkdownProcessorOptions["mdastPlugins"]>[number];
+
+const { skill } = Astro.props;
+// 原始文件与详情页同在 /skills/<名称>/ 下，相对图片按这个目录补成站内绝对路径。
+const skillBase = new URL(`/skills/${skill.name}/`, "https://skills.invalid");
+/** 只含 HTML 注释的片段（含 end 标记一类的维护注释），在渲染前整段移除。 */
+const COMMENT_ONLY_HTML = /^\s*(?:<!--[\s\S]*?-->\s*)+$/;
+/** 两侧都是中文字符或全角标点的软换行；浏览器会把它显示成多余空格。 */
+const CJK_CHARACTERS = "\\p{Script=Han}\\u3000-\\u303f\\uff00-\\uffef";
+const CJK_SOFT_BREAK = new RegExp(`([${CJK_CHARACTERS}])\\n(?=[${CJK_CHARACTERS}])`, "gu");
+
+/**
+ * 把 SKILL.md 正文适配到详情页的 mdast 插件：
+ * - 标题整体降一级，页面 h1 保留给 skill 名称；
+ * - 移除纯注释的 HTML 片段，代码块里的注释是 code 节点，不受影响；
+ * - 相对图片改写为站内绝对路径，否则 Astro 会把它当作待优化的本地图片并移除 src；
+ * - SKILL.md 习惯一句一行，中文之间的软换行直接去掉，避免句间出现空格（代码块不是 text 节点，不受影响）。
+ */
+const skillBodyPlugin = {
+  name: "skill-body",
+  heading(node, context) {
+    // 最深仍是 h6；类型断言只收窄取值范围，结果必然落在 1～6 之间。
+    context.setProperty(node, "depth", Math.min(6, node.depth + 1) as typeof node.depth);
+  },
+  html(node, context) {
+    if (COMMENT_ONLY_HTML.test(node.value)) context.replaceNode(node, []);
+  },
+  image(node, context) {
+    const url = node.url;
+    if (!url || url.startsWith("/") || url.startsWith("#") || URL.canParse(url)) return;
+    context.setProperty(node, "url", new URL(url, skillBase).pathname);
+  },
+  text(node, context) {
+    const joined = node.value.replace(CJK_SOFT_BREAK, "$1");
+    if (joined !== node.value) context.setProperty(node, "value", joined);
+  },
+} satisfies MdastPlugin;
+
+// 关闭语法高亮：Shiki 会输出内联 style 属性，被站点 CSP 的 style-src 'self' 拦截。
+const renderer = await createSatteriMarkdownProcessor({
+  syntaxHighlight: false,
+  mdastPlugins: [skillBodyPlugin],
+});
+const { code: bodyHtml } = await renderer.render(skill.body);
+---
+
+{/* 正文来自仓库内维护的 SKILL.md，构建期渲染为静态 HTML；相对链接在 /skills/<名称>/ 下解析到原始文件。 */}
+<div class="notion-content skill-body" set:html={bodyHtml} />

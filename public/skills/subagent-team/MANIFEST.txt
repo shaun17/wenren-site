@@ -1,7 +1,0 @@
-# subagent-team 文件清单
-# 每行：<相对本目录的路径>  <保存位置>。保存位置里的 ~ 指用户主目录（Windows 为 %USERPROFILE%）。
-# 每个文件最后一行是 <!-- end: subagent-team/<路径> -->，用来确认下载完整。
-SKILL.md                  ~/.claude/skills/subagent-team/SKILL.md
-references/dispatch.md    ~/.claude/skills/subagent-team/references/dispatch.md
-references/discussion.md  ~/.claude/skills/subagent-team/references/discussion.md
-references/worker.md      ~/.claude/skills/subagent-team/references/worker.md

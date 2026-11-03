@@ -23,6 +23,16 @@
 /notion-assets/*
   Cache-Control: public, max-age=31536000, immutable
 
+# skill 原始文件与生成的 txt 一律按纯文本返回；/skills/ 与 /skills/<名称>/ 是 HTML 页面，
+# 先移除上面设置的纯文本类型再改回 HTML（同一规则内先 ! 移除、后设置）。
 /skills/*
   Cache-Control: no-cache
   Content-Type: text/plain; charset=utf-8
+
+/skills/
+  ! Content-Type
+  Content-Type: text/html; charset=utf-8
+
+/skills/:skill/
+  ! Content-Type
+  Content-Type: text/html; charset=utf-8

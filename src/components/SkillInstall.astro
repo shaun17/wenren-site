@@ -1,0 +1,125 @@
+---
+import { SKILLS_SOURCE_REPOSITORY, type Skill } from "../content/skills";
+
+interface Props {
+  skill: Skill;
+}
+
+interface InstallMethod {
+  id: string;
+  title: string;
+  note: string;
+  /** 复制按钮写入剪贴板的完整文本，与页面上可选中的 code 内容一致。 */
+  text: string;
+  /** 提示词按自然段换行；命令保持原样，窄屏时横向滚动。 */
+  wrap: boolean;
+}
+
+const { skill } = Astro.props;
+const repositorySlug = new URL(SKILLS_SOURCE_REPOSITORY).pathname.replace(/^\//, "");
+const repositoryDirectory = repositorySlug.split("/").at(-1) ?? repositorySlug;
+
+// 三种方式按依赖从少到多排列：只需要 agent，其次需要 Node，最后需要 git 并手动放置目录。
+const methods: InstallMethod[] = [
+  {
+    id: `skill-install-agent-${skill.name}`,
+    title: "让 agent 安装",
+    note: "把这句话发给 Claude Code 等 agent，它会按清单逐个下载文件。",
+    text: `读取 ${skill.manifestUrl}，按清单把每个文件下载到对应保存位置，并用每个文件最后一行的 end 标记确认下载完整。`,
+    wrap: true,
+  },
+  {
+    id: `skill-install-npx-${skill.name}`,
+    title: "npx skills",
+    note: "需要 Node.js，-g 装到用户目录，-a 指定 agent。",
+    text: `npx skills add ${repositorySlug} --skill ${skill.name} -g -a claude-code`,
+    wrap: false,
+  },
+  {
+    id: `skill-install-git-${skill.name}`,
+    title: "git clone",
+    note: `克隆源码仓库，再把 ${skill.name}/ 复制或软链到 ~/.claude/skills/。软链后在仓库里 git pull 即可更新，不需要跟踪更新时把 ln -s 换成 cp -R。`,
+    text: [
+      `git clone ${SKILLS_SOURCE_REPOSITORY}`,
+      "mkdir -p ~/.claude/skills",
+      `ln -s "$PWD/${repositoryDirectory}/${skill.name}" ~/.claude/skills/${skill.name}`,
+    ].join("\n"),
+    wrap: false,
+  },
+];
+---
+
+<section class="skill-section" aria-labelledby="skill-install-heading">
+  <h2 id="skill-install-heading" class="skill-section-title">安装</h2>
+  <ol class="skill-install-list">
+    {
+      methods.map((method, index) => (
+        <li class="skill-install-method">
+          <div class="skill-install-head">
+            <h3>
+              <span class="skill-install-index" aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+              {method.title}
+            </h3>
+            {/* 没有脚本时按钮保持隐藏，命令仍可在下方 code 中手动选中复制。 */}
+            <button
+              class="skill-copy-button"
+              type="button"
+              data-skill-copy={method.id}
+              hidden
+            >
+              复制
+            </button>
+          </div>
+          <p class="skill-install-note">{method.note}</p>
+          <pre
+            class:list={["skill-install-code", { "is-wrapped": method.wrap }]}
+          ><code id={method.id}>{method.text}</code></pre>
+        </li>
+      ))
+    }
+  </ol>
+  <p class="skill-copy-status" aria-live="polite" data-skill-copy-status></p>
+</section>
+
+<script>
+  /** 复制成功或失败后，按钮文字保持多久再恢复。 */
+  const FEEDBACK_DURATION_MS = 1800;
+  const status = document.querySelector<HTMLElement>("[data-skill-copy-status]");
+
+  /** 剪贴板接口不可用或被拒绝时退回选中文本，让用户手动复制。 */
+  const selectCode = (code: HTMLElement) => {
+    const selection = window.getSelection();
+    if (!selection) return;
+    selection.removeAllRanges();
+    const range = document.createRange();
+    range.selectNodeContents(code);
+    selection.addRange(range);
+  };
+
+  /** 在按钮与读屏播报区同时反馈结果，并在短暂停留后恢复按钮文字。 */
+  const showFeedback = (button: HTMLButtonElement, label: string, message: string) => {
+    button.textContent = label;
+    if (status) status.textContent = message;
+    window.setTimeout(() => {
+      button.textContent = "复制";
+    }, FEEDBACK_DURATION_MS);
+  };
+
+  /** 为每个复制按钮绑定对应的 code，脚本可用时才显示按钮。 */
+  for (const button of document.querySelectorAll<HTMLButtonElement>("[data-skill-copy]")) {
+    const targetId = button.dataset.skillCopy;
+    const code = targetId ? document.getElementById(targetId) : null;
+    if (!code) continue;
+    button.hidden = false;
+    button.addEventListener("click", async () => {
+      const text = code.textContent ?? "";
+      try {
+        await navigator.clipboard.writeText(text);
+        showFeedback(button, "已复制", "已复制到剪贴板");
+      } catch {
+        selectCode(code);
+        showFeedback(button, "已选中", "无法写入剪贴板，已选中文本，请手动复制");
+      }
+    });
+  }
+</script>

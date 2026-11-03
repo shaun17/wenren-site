@@ -18,19 +18,30 @@ const cleanPackageJson = {
   devDependencies: {},
 };
 const personalOnlyFiles = [
+  "scripts/sync-skills.mjs",
   "src/components/HomeSticker.astro",
+  "src/components/SkillInstall.astro",
+  "src/components/SkillMarkdown.astro",
   "src/components/SpatialPortrait.astro",
   "src/config/spatial-avatar-assets.ts",
   "src/config/spatial-avatar-layout.ts",
+  "src/content/skills.ts",
   "src/lib/home-sticker.ts",
   "src/lib/spatial-avatar-model.ts",
   "src/lib/spatial-avatar-prefetch.ts",
   "src/lib/spatial-avatar-scene.ts",
   "src/lib/spatial-portrait.ts",
   "src/pages/avatar.astro",
+  "src/pages/skills/[skill]/MANIFEST.txt.ts",
+  "src/pages/skills/[skill]/index.astro",
+  "src/pages/skills/index.astro",
+  "src/pages/skills/index.txt.ts",
   "src/styles/avatar.css",
   "src/styles/home-sticker.css",
+  "src/styles/skills.css",
   "tests/home-sticker.test.mjs",
+  "tests/skills-page.test.mjs",
+  "tests/skills.test.mjs",
   "tests/spatial-portrait.test.mjs",
 ];
 const personalOnlyAssets = [
@@ -38,6 +49,7 @@ const personalOnlyAssets = [
   "public/projects/id-photo-maker/background-adjustment.jpg",
   "public/projects/id-photo-maker/beauty-adjustment.jpg",
   "public/projects/id-photo-maker/size-selection.jpg",
+  "public/skills/subagent-team/SKILL.md",
   "public/stickers/petly-sticker.webp",
 ];
 

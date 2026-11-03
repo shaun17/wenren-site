@@ -1,0 +1,101 @@
+---
+import BackLink from "../../../components/BackLink.astro";
+import PageFooter from "../../../components/PageFooter.astro";
+import SkillInstall from "../../../components/SkillInstall.astro";
+import SkillMarkdown from "../../../components/SkillMarkdown.astro";
+import { siteConfig } from "../../../config/runtime-site-config";
+import { loadSkills, type Skill } from "../../../content/skills";
+import SiteLayout from "../../../layouts/SiteLayout.astro";
+import "../../../styles/skills.css";
+
+/** 每个 skill 生成一个与原始文件同目录的 HTML 详情页，地址统一使用构建期站点域名。 */
+export function getStaticPaths() {
+  return loadSkills({ origin: siteConfig.origin }).map((skill) => ({
+    params: { skill: skill.name },
+    props: { skill },
+  }));
+}
+
+interface Props {
+  skill: Skill;
+}
+
+const { skill } = Astro.props;
+const skillFile = skill.files.find((file) => file.path === "SKILL.md");
+---
+
+<SiteLayout title={skill.name} description={skill.summary}>
+  <main class="content-shell article-shell skill-page">
+    <nav class="page-navigation" aria-label="页面导航">
+      <BackLink href="/skills/" label="返回 Skills" />
+    </nav>
+
+    <article>
+      <header class="article-header">
+        <p class="article-meta"><span>Claude Code skill</span></p>
+        <h1>{skill.name}</h1>
+        <p class="article-summary">{skill.description}</p>
+        <hr class="article-divider" />
+        <nav class="project-links" aria-label="项目链接">
+          <a
+            class="animated-underline"
+            href={skill.sourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="GitHub 源码（在新标签页打开）"
+          >
+            <span>GitHub 源码</span>
+          </a>
+        </nav>
+      </header>
+
+      <SkillInstall skill={skill} />
+
+      <section class="skill-section" aria-labelledby="skill-files-heading">
+        <h2 id="skill-files-heading" class="skill-section-title">文件</h2>
+        <p class="skill-section-note">
+          安装后的目录结构。点击路径查看原始文件，完整清单见
+          <a href={skill.manifestPath}>MANIFEST.txt</a>。
+        </p>
+        <div class="skill-files-wrap">
+          <table class="skill-files">
+            <thead>
+              <tr>
+                <th scope="col">文件</th>
+                <th scope="col">保存位置</th>
+              </tr>
+            </thead>
+            <tbody>
+              {
+                skill.files.map((file) => (
+                  <tr>
+                    <td>
+                      <a href={file.publicPath}>{file.path}</a>
+                    </td>
+                    <td>
+                      <code>{file.installPath}</code>
+                    </td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="skill-section skill-readme" aria-label="SKILL.md 正文">
+        <p class="skill-readme-label">
+          <a href={skillFile?.publicPath ?? `/skills/${skill.name}/SKILL.md`}>SKILL.md</a>
+        </p>
+        <SkillMarkdown skill={skill} />
+      </section>
+
+      <nav class="article-return" aria-label="返回列表">
+        <span class="article-end-marker" aria-hidden="true">END</span>
+        <BackLink href="/skills/" label="返回 Skills" />
+      </nav>
+    </article>
+
+    <PageFooter />
+  </main>
+</SiteLayout>
