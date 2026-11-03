@@ -14,7 +14,7 @@
 提交前必须把改动归入以下一种类型：
 
 1. 通用模板能力：不依赖姓名、域名、个人文案、Notion 私有数据、3D 模型或个人路由，使用示例配置和 fixture 可以完整工作。
-2. 个人站能力：涉及 `/avatar/`、`public/3d/`、空间肖像、个人内容、个人生产配置或 `wenren.cc`。
+2. 个人站能力：涉及 `/avatar/`、`public/3d/`、空间肖像、`/skills/`、`public/skills/`、个人内容、个人生产配置或 `wenren.cc`。
 3. 混合修改：同时包含通用实现和个人接入，必须拆成独立提交；通用部分先进入 PageComet，个人部分随后进入 wenren-site。
 
 ## 通用优化回流 PageComet
@@ -28,6 +28,19 @@
 5. 最后才把合并结果推送到 `wenren-site/main`。
 
 如果通用优化最初出现在个人功能分支中，必须先形成纯通用提交。在 PageComet 工程从本机 `personal` 远端获取该分支，再把纯通用提交 cherry-pick 到基于 `origin/main` 的 `contrib/<功能名>`；混合提交必须重新提炼，禁止整体 cherry-pick。PageComet 合并后，个人站以 `upstream/main` 中的通用实现为准，只把个人接入提交带回 `wenren-site/main`。不需要、也不得先把通用提交推到 `wenren-site/main` 作为中转。
+
+## Skills 功能只属于 wenren-site
+
+`/skills/` 展示页、curl 索引与清单（`index.txt`、`MANIFEST.txt`、纯文本 404）、`sync:skills` 同步脚本和页脚 Skills 入口，全部属于个人站能力。不得进入 PageComet，也不得以"通用能力"的名义提炼回流。skill 源码在 `shaun17/wenren-skills`，用 `npm run sync:skills -- <源码目录>` 同步到 `public/skills/`。
+
+- 个人文件和 `public/skills/` 由 `scripts/check-repository-boundary.mjs` 约束。模板角色下，`@astrojs/markdown-satteri` 依赖和 `sync:skills` 脚本也会被拒绝。
+- 以下共享文件带有 skills 接入点：
+  - `package.json`：`sync:skills` 脚本、`@astrojs/markdown-satteri` 依赖
+  - `public/_headers`：`/skills/` 规则
+  - `src/components/ContactLinks.astro`：引用 `SkillsLink`
+  - `src/pages/sitemap.xml.ts`：收录 skill 页面
+  - `tests/site.test.mjs`：favicon 检查排除 `skills/404.html`
+- 合并 `upstream/main` 遇到冲突时，同时保留上游改进和这些接入点。向 PageComet 提炼通用提交时，必须剔除这些接入点。
 
 ## 个人站提交与发布
 

@@ -46,6 +46,10 @@ const PERSONAL_REQUIRED_FILES = [
   "tests/spatial-portrait.test.mjs",
 ];
 const TEMPLATE_FORBIDDEN_FILES = new Set(PERSONAL_REQUIRED_FILES);
+// skills 功能（/skills/ 展示页、curl 索引与清单、同步脚本）只属于个人站，
+// 它在 package.json 中的依赖与脚本同样不得出现在模板里。
+const SKILLS_DEPENDENCIES = ["@astrojs/markdown-satteri"];
+const SKILLS_SCRIPTS = ["sync:skills"];
 const TEMPLATE_FORBIDDEN_PREFIXES = [
   "public/3d/",
   "public/projects/id-photo-maker/",
@@ -121,6 +125,16 @@ export const validateRepositoryBoundary = ({ role, trackedFiles, packageJson }) 
         errors.push(`PageComet 模板不应依赖个人 3D 运行库：${dependency}`);
       }
     }
+    for (const dependency of SKILLS_DEPENDENCIES) {
+      if (dependency in allDependencies) {
+        errors.push(`PageComet 模板不应依赖个人 skills 渲染库：${dependency}`);
+      }
+    }
+    for (const script of SKILLS_SCRIPTS) {
+      if (script in (packageJson.scripts ?? {})) {
+        errors.push(`PageComet 模板不应包含个人 skills 脚本：${script}`);
+      }
+    }
   }
 
   if (role === "personal") {
@@ -138,6 +152,16 @@ export const validateRepositoryBoundary = ({ role, trackedFiles, packageJson }) 
     if (glbAssets.length === 0) errors.push("wenren-site 缺少公开 GLB 模型");
     if (posterAssets.length < 2) errors.push("wenren-site 缺少桌面或移动端模型海报");
     if (!("three" in allDependencies)) errors.push("wenren-site 缺少 three 运行依赖");
+    for (const dependency of SKILLS_DEPENDENCIES) {
+      if (!(dependency in allDependencies)) {
+        errors.push(`wenren-site 缺少 skills 渲染依赖：${dependency}`);
+      }
+    }
+    for (const script of SKILLS_SCRIPTS) {
+      if (!(script in (packageJson.scripts ?? {}))) {
+        errors.push(`wenren-site 缺少 skills 脚本：${script}`);
+      }
+    }
   }
 
   return errors;
