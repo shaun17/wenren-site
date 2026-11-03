@@ -32,6 +32,7 @@ const PERSONAL_REQUIRED_FILES = [
   "src/lib/spatial-avatar-scene.ts",
   "src/lib/spatial-portrait.ts",
   "src/pages/avatar.astro",
+  "src/pages/skills/404.html.ts",
   "src/pages/skills/[skill]/MANIFEST.txt.ts",
   "src/pages/skills/[skill]/index.astro",
   "src/pages/skills/index.astro",

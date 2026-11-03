@@ -940,8 +940,9 @@ test("keeps generated files static and credential-free", async () => {
 test("versions every page favicon by its shipped content", async () => {
   const icon = await readFile(new URL("favicon.svg", buildRoot));
   const version = createHash("sha256").update(icon).digest("hex").slice(0, 12);
-  const names = (await readdir(buildRoot, { recursive: true })).filter((name) =>
-    name.endsWith(".html"),
+  // skills/404.html 是给 curl 与 agent 的纯文本 404，不是 HTML 页面，不需要图标。
+  const names = (await readdir(buildRoot, { recursive: true })).filter(
+    (name) => name.endsWith(".html") && name !== "skills/404.html",
   );
   assert.ok(names.length > 1);
   for (const name of names) {
