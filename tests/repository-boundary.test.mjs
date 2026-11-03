@@ -17,6 +17,12 @@ const cleanPackageJson = {
   dependencies: { astro: "1.0.0" },
   devDependencies: {},
 };
+// 个人站 package.json 的最小契约：3D 运行库、skills 渲染依赖与同步脚本。
+const personalPackageJson = {
+  scripts: { "sync:skills": "node scripts/sync-skills.mjs" },
+  dependencies: { astro: "1.0.0", three: "1.0.0", "@astrojs/markdown-satteri": "1.0.0" },
+  devDependencies: {},
+};
 const personalOnlyFiles = [
   "scripts/sync-skills.mjs",
   "src/components/HomeSticker.astro",
@@ -106,6 +112,22 @@ test("rejects local configuration and personal dependencies in the template repo
   assert.ok(errors.some((error) => error.includes("three")));
 });
 
+/** skills 功能只属于个人站：模板出现其渲染依赖或同步脚本都应被拒绝。 */
+test("rejects personal skills dependencies and scripts in the template repository", () => {
+  const errors = validateRepositoryBoundary({
+    role: "template",
+    trackedFiles: cleanTemplateFiles,
+    packageJson: {
+      ...cleanPackageJson,
+      scripts: { "sync:skills": "node scripts/sync-skills.mjs" },
+      dependencies: { astro: "1.0.0", "@astrojs/markdown-satteri": "1.0.0" },
+    },
+  });
+
+  assert.ok(errors.some((error) => error.includes("@astrojs/markdown-satteri")));
+  assert.ok(errors.some((error) => error.includes("sync:skills")));
+});
+
 /** 每个已知个人模块和资源路径都必须单独触发模板边界，避免部分遗漏被批量断言掩盖。 */
 test("rejects every known personal module and asset in the template repository", () => {
   for (const file of [...personalOnlyFiles, ...personalOnlyAssets]) {
@@ -135,10 +157,7 @@ test("requires the complete personal source contract in the personal repository"
     validateRepositoryBoundary({
       role: "personal",
       trackedFiles: requiredFiles,
-      packageJson: {
-        dependencies: { astro: "1.0.0", three: "1.0.0" },
-        devDependencies: {},
-      },
+      packageJson: personalPackageJson,
     }),
     [],
   );
@@ -147,10 +166,7 @@ test("requires the complete personal source contract in the personal repository"
     const errors = validateRepositoryBoundary({
       role: "personal",
       trackedFiles: requiredFiles.filter((file) => file !== requiredFile),
-      packageJson: {
-        dependencies: { astro: "1.0.0", three: "1.0.0" },
-        devDependencies: {},
-      },
+      packageJson: personalPackageJson,
     });
     assert.ok(
       errors.some((error) => error.includes(requiredFile)),
@@ -167,6 +183,8 @@ test("requires the complete personal source contract in the personal repository"
   assert.ok(errors.some((error) => error.includes("GLB")));
   assert.ok(errors.some((error) => error.includes("海报")));
   assert.ok(errors.some((error) => error.includes("three")));
+  assert.ok(errors.some((error) => error.includes("@astrojs/markdown-satteri")));
+  assert.ok(errors.some((error) => error.includes("sync:skills")));
 });
 
 /** 普通模板使用者只受凭据与构建产物保护，不被上游个人化规则限制。 */
