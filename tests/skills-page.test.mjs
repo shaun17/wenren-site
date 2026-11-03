@@ -144,3 +144,11 @@ test("首页与内页页脚在联系方式旁提供 Skills 入口", async () => 
     assert.doesNotMatch(contactNav.match(/<a href="\/skills\/"[^>]*>/)?.[0] ?? "", /target=/);
   }
 });
+
+test("/skills/ 下的 404 是纯文本，并指向索引与每个 MANIFEST", async () => {
+  const body = await readRoute("skills/404.html");
+  assert.doesNotMatch(body, /<[a-z!]/i, "skills 404 不应包含 HTML 标签");
+  assert.match(body, /^404 Not Found/);
+  assert.ok(body.includes(new URL("/skills/index.txt", siteConfig.origin).href));
+  for (const skill of skills) assert.ok(body.includes(skill.manifestUrl), `应列出 ${skill.name} 的清单`);
+});
