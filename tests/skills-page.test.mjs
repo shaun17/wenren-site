@@ -134,3 +134,13 @@ test("sitemap 包含列表页与每个详情页", async () => {
     assert.ok(sitemap.includes(`<loc>${siteConfig.origin}/skills/${skill.name}/</loc>`));
   }
 });
+
+test("首页与内页页脚在联系方式旁提供 Skills 入口", async () => {
+  for (const route of ["index.html", "skills/index.html", "journal/index.html"]) {
+    const html = await readRoute(route);
+    const contactNav = html.match(/<nav class="contact-links"[\s\S]*?<\/nav>/)?.[0] ?? "";
+    assert.match(contactNav, /<a href="\/skills\/"[^>]*>Skills<\/a>/, `${route} 页脚应有 Skills 入口`);
+    // 站内链接不应在新标签页打开。
+    assert.doesNotMatch(contactNav.match(/<a href="\/skills\/"[^>]*>/)?.[0] ?? "", /target=/);
+  }
+});

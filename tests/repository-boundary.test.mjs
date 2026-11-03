@@ -22,6 +22,7 @@ const personalOnlyFiles = [
   "src/components/HomeSticker.astro",
   "src/components/SkillInstall.astro",
   "src/components/SkillMarkdown.astro",
+  "src/components/SkillsLink.astro",
   "src/components/SpatialPortrait.astro",
   "src/config/spatial-avatar-assets.ts",
   "src/config/spatial-avatar-layout.ts",
