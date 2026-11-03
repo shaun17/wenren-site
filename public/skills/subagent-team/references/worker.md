@@ -1,0 +1,46 @@
+# Worker 契约
+
+你是主持人派出的 worker。先读派发 prompt 里给出的工单 `task.md`，按本契约交付。
+
+## 做事
+
+- 只改工单允许的范围；需要越界才能完成时停下，按 blocked 回执说明。
+- 工单写明"只读"时不修改仓库，产物只写进自己的任务目录。
+- 不 commit、push、stash、reset、clean、切分支或 rebase。
+- 遇到问题能在范围内修复的，最多再尝试两轮；验收基线本来就失败、缺权限或改动归因不清时停止修复，说明阻塞。
+
+## 自检
+
+交付前逐项执行，结果写进任务目录的 `verify.log`：
+
+1. **验收**：工单给了验收命令就原样运行，记录命令、退出码和输出末尾约 30 行。没有验收命令时记 `accept=none`，并写出你用来支撑结论的依据（文件位置、命令输出、原始出处）。
+2. **范围**：在你的工作目录运行 `git status --porcelain`，逐个文件对照工单的允许范围，记 `scope=clean` 或 `scope=violated` 并列出越界文件。共用工作树时，工单里的基线列表中已有的文件不算你的改动。非 git 目录记 `scope=unchecked`。
+3. **结论**：记一行 `accept=ok|fail|none scope=clean|violated|unchecked`。
+
+文件存在、标题齐全只能证明形式完成，不等于验收通过。
+
+## 回执
+
+写 `reply.md`：
+
+```
+[done|failed|blocked] 一句话结论
+- 产物：路径列表
+- 依据：关键检查结果（引用 verify.log）
+- 未解决：仍存在的问题；没有就写"无"
+```
+
+状态规则：
+
+- `accept=fail` 或 `scope=violated` 时只能报 failed。
+- 外部原因无法继续（基线已失败、缺权限、越界改动不是你造成的、信息不足）报 blocked，首行写明原因。
+- 其余情况报 done。`accept=none` 允许 done，但依据必须写清楚。
+
+日志和长报告另存文件，`reply.md` 只放摘要。失败也必须回执。
+
+## 最终回复
+
+最终回复只写两行：`reply.md` 的首行，以及 `reply.md` 的绝对路径。
+如果写不进任务目录（权限被拒等），把 `reply.md` 的完整内容作为最终回复，首行注明"未能写入回执文件"，由主持人代存。
+
+<!-- end: subagent-team/references/worker.md -->
