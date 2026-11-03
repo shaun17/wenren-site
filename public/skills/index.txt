@@ -1,5 +1,0 @@
-# wenren 的 Claude Code skills
-# 源码：https://github.com/shaun17/wenren-skills
-# 每个 skill 的文件清单在 <名称>/MANIFEST.txt。
-
-subagent-team  用 Claude Code 原生 subagent 组团队：拆分派活、批次验收、圆桌协商。  https://wenren.cc/skills/subagent-team/MANIFEST.txt

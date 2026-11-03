@@ -2,6 +2,7 @@ import type { APIRoute } from "astro";
 import { siteConfig } from "../config/runtime-site-config";
 import { ORDERED_CATEGORIES } from "../content/categories";
 import { getJournalEntries, getSiteContent } from "../content/site-content";
+import { loadSkills } from "../content/skills";
 
 interface SitemapRecord {
   loc: string;
@@ -47,6 +48,8 @@ export const GET: APIRoute = async () => {
     getJournalEntries(),
   ]);
   const allContent = [...articles, ...journals];
+  // skill 页面来自仓库内文件，没有可靠的更新时间，因此不写 lastmod。
+  const skills = loadSkills({ origin: siteConfig.origin });
   const records: SitemapRecord[] = [
     {
       loc: createCanonicalUrl("/"),
@@ -69,6 +72,14 @@ export const GET: APIRoute = async () => {
     ...articles.map((entry) => ({
       loc: createCanonicalUrl(entry.route),
       lastmod: entry.updatedAt,
+    })),
+    {
+      loc: createCanonicalUrl("/skills/"),
+      lastmod: null,
+    },
+    ...skills.map((skill) => ({
+      loc: createCanonicalUrl(`/skills/${skill.name}/`),
+      lastmod: null,
     })),
   ];
   const xml = [
